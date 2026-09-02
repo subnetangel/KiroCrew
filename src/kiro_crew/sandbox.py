@@ -5229,6 +5229,52 @@ def reset_backend() -> None:
 _SANDBOX_MODE_ALIASES = {"auto": "standard"}
 
 
+def credential_mask_applies(mode: str) -> bool:
+    """Whether :func:`wrap_argv` would actually APPLY ``extra_hidden_dirs`` for *mode*.
+
+    Exactly two outcomes hand back an UNWRAPPED child, dropping the mask: the ``off``
+    tier, and a host with no backend where unsandboxed exec is opted in and no
+    governance floor mandates a sandbox (the ``return argv, None`` after
+    ``_warn_no_isolation``). Every other path either wraps the argv -- ``namespace``
+    and ``sandbox-exec`` both thread ``extra_hidden_dirs`` through -- or REFUSES the
+    spawn outright with :class:`SandboxUnavailableError`, and a refusal needs no guard
+    because nothing starts.
+
+    This lives here, beside those branches, so a caller whose security argument
+    depends on the mask cannot drift from them: a future branch that skips the mask
+    is a change to this function, not a silent hole in some other module's copy of
+    the reasoning.
+    """
+    floor = _governance_sandbox_floor()
+    effective = _clamp_sandbox_mode_to_floor(mode, floor)
+    if effective == "off":
+        return False
+    # Already inside a Kiro Crew sandbox: a nested re-wrap is impossible by design,
+    # wrap_argv passes the argv through (at most an env scrub) and never reaches a
+    # backend that could apply the mask. The OUTER sandbox confines the child, but it
+    # was built for the tier's own hidden dirs -- which deliberately leave ~/.aws,
+    # ~/.ssh and ~/.kube readable for kiro-cli's sake -- so it is NOT a substitute for
+    # an adapter-specific credential mask.
+    if _inside_kirocrew_sandbox() and _macos_sandbox_state() is not False:
+        return False
+    if detect_backend(config_mode=effective) != "none":
+        return True
+    # backend == "none": wrap_argv raises unless the operator opted in AND the floor
+    # allows it, so only the opted-in-and-ungoverned case reaches the bare return.
+    return not _allow_unsandboxed_exec() or _floor_mandates_sandbox(floor)
+
+
+def effective_sandbox_mode(mode: str) -> str:
+    """The tier :func:`wrap_argv` would ACTUALLY apply for *mode* on this host.
+
+    Applies the governed ``sandbox.min_level`` clamp, so a caller whose security
+    argument depends on the sandbox being on can ask whether it will be instead of
+    trusting the raw config value -- which a governance floor may silently raise.
+    Read-only: same clamp, no spawn, no side effects.
+    """
+    return _clamp_sandbox_mode_to_floor(mode, _governance_sandbox_floor())
+
+
 def _governance_sandbox_floor() -> str | None:
     """Read the governed ``sandbox.min_level`` floor, or ``None`` when ungoverned.
 

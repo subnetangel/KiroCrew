@@ -42,7 +42,7 @@ from typing import (
     TypeVar,
 )
 
-from kiro_crew import agent_scratch, model_registry, platform_compat
+from kiro_crew import acp_tool_gate, agent_scratch, model_registry, platform_compat
 from kiro_crew.acp._dispatch import (
     _kiro_mcp_server_name,
     _kiro_tool_name,
@@ -1213,6 +1213,20 @@ class AcpAuthRequired(AcpError):  # noqa: N818
     Non-retryable: respawning the process hits the same wall, so callers must
     surface the actionable message and skip the retry ladder rather than
     reset-and-requeue the turn.
+    """
+
+
+class AcpToolGateUnroutable(AcpError):  # noqa: N818
+    """The harness's tool calls would not reach Kiro Crew's PreToolUse gate.
+
+    Non-retryable, and a DISTINCT type from the transport errors around it: the
+    condition is a configuration fact, so a respawn re-reads the same answer and
+    refuses again while consuming a reconnect budget meant for transport faults.
+
+    Wraps :class:`kiro_crew.acp_tool_gate.ToolGateUnroutable`, which cannot
+    subclass ``AcpError`` itself -- it lives in a LEAF module that must not import
+    this one (import cycle, and a forbidden-root edge for the SDK boundary gate).
+    Branchless callers keep degrading through their generic ``AcpError`` handling.
     """
 
 
@@ -2390,6 +2404,22 @@ def _select_tool_title(
     return None
 
 
+def _sandbox_preflight(backend: str, mode: str) -> tuple[str, ...]:
+    """Refuse an unmasked enforced adapter, then resolve its credential mask.
+
+    One function so the caller pays ONE ``asyncio.to_thread`` hop for both steps:
+    ``enforce_sandbox_floor`` probes for a sandbox backend and
+    ``adapter_hidden_credential_dirs`` resolves the home and every env-override root,
+    and both are blocking filesystem work that must not run on the event loop.
+
+    Raises :class:`acp_tool_gate.ToolGateUnroutable` when this session would spawn the
+    adapter with its mask dropped; returns the mask otherwise (empty for a harness
+    this core does not enforce, so their spawn arguments stay byte-identical).
+    """
+    acp_tool_gate.enforce_sandbox_floor(backend, mode)
+    return acp_tool_gate.adapter_hidden_credential_dirs(backend)
+
+
 class AcpClient:
     """JSON-RPC 2.0 client over stdio with kiro-cli acp."""
 
@@ -3258,6 +3288,63 @@ class AcpClient:
 
     # ── Dynamic Config from ACP ──
 
+    async def _apply_session_permission_routing(self) -> None:
+        """Make a SESSION_CONFIG harness actually ask, or refuse to run it.
+
+        Called ONLY for a ``SESSION_CONFIG`` harness -- the caller tests that, so
+        the Kiro path never reaches this method (harness-parity H13).
+
+        Two outcomes, and each is a different verdict on purpose:
+
+        * the option was not advertised -> INDETERMINATE, because Kiro Crew cannot
+          tell what the adapter will do, and "cannot tell" must not read as armed;
+        * the write was rejected -> BYPASSED, an observed failure rather than an
+          unknown.
+
+        Only the enforced mechanisms refuse; ``enforce_runtime_routing`` owns that
+        decision, so the scope lives in one place instead of being re-derived here.
+        """
+        backend = self.backend
+        option_id, value = acp_tool_gate.permission_config_for(backend)
+        issue = acp_tool_gate.session_config_issue(backend, self._acp_config_options)
+        if issue:
+            # Not advertised: INDETERMINATE, never BYPASSED. The adapter may well
+            # ask anyway; Kiro Crew simply has no evidence, and the enforcement
+            # treats the two identically while the message stays honest.
+            try:
+                acp_tool_gate.enforce_runtime_routing(
+                    backend,
+                    issue,
+                    verdict=acp_tool_gate.Verdict.INDETERMINATE,
+                    remedy=acp_tool_gate.remediation_for(backend),
+                )
+            except acp_tool_gate.ToolGateUnroutable as exc:
+                raise AcpToolGateUnroutable(str(exc)) from None
+            return
+
+        try:
+            await self.set_config_option(option_id, value)
+        except AcpError as exc:
+            # The option was advertised and the write still failed, so this is an
+            # observed bypass rather than missing evidence.
+            try:
+                acp_tool_gate.enforce_runtime_routing(
+                    backend,
+                    "the adapter rejected its required session permission configuration",
+                    verdict=acp_tool_gate.Verdict.BYPASSED,
+                    remedy=acp_tool_gate.remediation_for(backend),
+                )
+            except acp_tool_gate.ToolGateUnroutable as gate_exc:
+                raise AcpToolGateUnroutable(str(gate_exc)) from exc
+            return
+
+        logger.info(
+            "ACP permission route armed: %s=%s (%s)",
+            option_id,
+            value,
+            acp_tool_gate.label_for(backend),
+        )
+
     def _store_session_config(self, resp: dict) -> None:
         """Extract effort configOptions from a session/new or session/load response.
 
@@ -3561,10 +3648,33 @@ class AcpClient:
         # Crew's seatbelt on macOS and grants Windows's Kiro-only delegation in
         # favour of the harness's own internal sandbox, so a harness without one
         # must never be granted it by the absence of another harness.
+        # Fail closed BEFORE the spawn when the mask below would be dropped:
+        # several wrap_argv paths return without applying extra_hidden_dirs, which
+        # would start an enforced adapter with no compensating control at all.
+        # Gated, not unconditional: harness-parity H13 asks whether the kiro path
+        # CHANGED, not whether it still works, and an awaited executor dispatch is a
+        # new step plus a new failure point on a live kiro construction path
+        # (knowledge/llm_pool.py builds AcpClient with the default backend). The
+        # preflight exists only to serve an enforced adapter and returns () for kiro,
+        # so gating it here keeps that path byte-identical -- the same reason the
+        # session-permission routing call downstream is gated on its own routing.
+        adapter_hidden_dirs: tuple[str, ...] = ()
+        if acp_tool_gate.is_enforced(self.backend):
+            # OFF-LOOP: both halves touch the filesystem -- the refusal probes for a
+            # sandbox backend (a cold probe shells out via subprocess.run) and the
+            # mask resolves the home plus every env-override root -- so they run in
+            # ONE worker thread rather than blocking the gateway event loop.
+            adapter_hidden_dirs = await asyncio.to_thread(
+                _sandbox_preflight, self.backend, self._sandbox_mode
+            )
         argv, self._sandbox_cleanup = await wrap_argv_async(
             argv,
             mode=self._sandbox_mode,
             strip_python_env=True,
+            # Credential homes the standard tier exposes for kiro-cli's sake and
+            # that an enforced adapter has no claim on. Empty for every harness
+            # this core does not enforce, so their spawn arguments are unchanged.
+            extra_hidden_dirs=adapter_hidden_dirs,
             is_kiro_cli=self.backend in ACP_BACKENDS_INTERNAL_SANDBOX,
             _prepare=wrap_argv,
         )
@@ -4405,6 +4515,17 @@ class AcpClient:
 
         # 5. Set model — override if KiroCrew config specifies non-default.
         await self._apply_startup_model()
+
+        # 6. Arm permission routing for harnesses whose asking is a session
+        #    config option. AFTER the model apply (both write config options, and
+        #    the permission one must land last) and before any prompt can run:
+        #    _initialize_session is entirely pre-prompt, which is what makes this
+        #    placement the guarantee rather than a best effort.
+        #    Gated HERE rather than inside the method, so the first-class Kiro path
+        #    gains no call, no await and no failure point in service of an adapter
+        #    (harness-parity H13). A positive membership test, never "not claude".
+        if acp_tool_gate.routing_for(self.backend) is acp_tool_gate.Routing.SESSION_CONFIG:
+            await self._apply_session_permission_routing()
 
         # Drain MCP server init notifications
         await self._drain_notifications()
