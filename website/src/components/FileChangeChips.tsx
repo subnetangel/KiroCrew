@@ -127,15 +127,21 @@ function ExpandedRow({ fc, added, removed, isArtifact, onFileOpen, disclosureKey
   const name = basename(fc.path)
   const oldFile = useMemo(() => ({ name, contents: fc.before }), [name, fc.before])
   const newFile = useMemo(() => ({ name, contents: fc.after }), [name, fc.after])
+  // Depend on WHETHER a file-open handler exists, never on its identity: the
+  // options only splice a CSS block in when the title is clickable, so an
+  // unstable callback from a parent must not re-create `options` — Pierre
+  // re-initializes the diff view when options change identity, which reads as
+  // the row flashing/reloading.
+  const clickableTitle = !!onFileOpen
   const options = useMemo(
     () => ({
       collapsed: !open && !closing,
       diffStyle: (sideBySide ? 'split' : 'unified') as 'split' | 'unified',
       overflow: 'wrap' as const,
       disableFileHeader: false,
-      unsafeCSS: (closing ? ROW_CSS_CLOSING : ROW_CSS_OPEN) + (onFileOpen ? ROW_CSS_CLICKABLE_TITLE : ''),
+      unsafeCSS: (closing ? ROW_CSS_CLOSING : ROW_CSS_OPEN) + (clickableTitle ? ROW_CSS_CLICKABLE_TITLE : ''),
     }),
-    [open, closing, onFileOpen, sideBySide],
+    [open, closing, clickableTitle, sideBySide],
   )
   useEffect(() => {
     if (!closing) return
