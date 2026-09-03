@@ -85,6 +85,10 @@ CORE_MCP_SERVER = "kirocrew-core"
 # A machine-facing framing token must not depend on characters that sanitisers,
 # Unicode normalisers and transports all legitimately rewrite.
 _SENTINEL = "[[KIROCREW_SESSION_DIRECTIVE]]"
+# Public alias. The transport layer (acp/_dispatch) has to locate the marker in a
+# raw frame to repair a payload that arrived JSON-escaped, and reaching for the
+# private name from another module would make that dependency invisible here.
+SENTINEL = _SENTINEL
 
 # The ACP tool-result parser truncates each output part at 4000 chars
 # (``acp/_dispatch.py`` ``str(text)[:4000]``). The marker is the TAIL of the
@@ -270,6 +274,46 @@ def directive_tool_for(mcp_server_name: str, tool_name: str) -> str:
     if mcp_server_name != CORE_MCP_SERVER:
         return ""
     return match_tool(tool_name or "")
+
+
+def peek_failure_reason(text: str | None) -> str:
+    """Name WHY :func:`peek` returned ``None`` for *text* -- diagnostics only.
+
+    ``has_marker`` true with ``peek`` returning ``None`` is a real observed state
+    and, until this existed, an undiagnosable one: the consumer could report that
+    no record matched without being able to say whether the sentinel arrived
+    without its payload, the payload was truncated mid-JSON, or the payload named
+    a kind this build does not know. Mirrors :func:`peek`'s branches exactly, so a
+    reason here is the branch peek actually took. Returns ``"ok"`` when peek
+    succeeds, so a caller can log it unconditionally.
+
+    The excerpt is bounded and carries the directive's own model-authored args,
+    never a credential the tool validated -- it exists so an operator can see the
+    malformed tail rather than guess at it.
+    """
+    if not text:
+        return "empty-output"
+    idx = text.find(_SENTINEL)
+    if idx < 0:
+        return "no-sentinel"
+    line = text[idx + len(_SENTINEL):].split("\n", 1)[0]
+    if not line:
+        return "sentinel-present-but-payload-empty (marker is the last thing in the frame)"
+    try:
+        block = json.loads(line)
+    except (ValueError, TypeError) as exc:
+        return (
+            "json-unparseable (%s); payload_len=%d tail_excerpt=%r"
+            % (exc.__class__.__name__, len(line), line[-200:])
+        )
+    if not isinstance(block, dict):
+        return "json-not-an-object (%s)" % type(block).__name__
+    kind = block.get("kind")
+    if not isinstance(kind, str):
+        return "kind-missing-or-not-a-string"
+    if kind not in DIRECTIVE_TOOLS:
+        return "unknown-kind=%r" % kind
+    return "ok"
 
 
 def strip_marker(text: str) -> str:

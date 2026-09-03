@@ -21,7 +21,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from kiro_crew import mcp_apps_render
+from kiro_crew import mcp_apps_render, session_directive
 from kiro_crew.acp.types import (
     EVENT_PERMISSION_REQUEST,
     EVENT_TEXT_CHUNK,
@@ -1143,6 +1143,125 @@ def _mcp_content_text(payload: dict[str, Any]) -> str | None:
     return "\n".join(parts)
 
 
+def _marker_bearing_text(payload: dict[str, Any], _max_nodes: int = 512) -> str | None:
+    """Return the ONE string inside *payload* that carries the directive sentinel.
+
+    The last-resort companion to :func:`_mcp_content_text`, for a tool-result
+    envelope this module does not recognise as a pure text envelope. Such a
+    payload currently reaches the consumer through ``json.dumps``, which escapes
+    every quote in it -- so a directive marker embedded in one of its string
+    values arrives with ``\"kind\"`` instead of ``"kind"`` and
+    ``session_directive.peek`` can no longer parse the selector. The sentinel
+    itself survives that escaping unchanged, so the frame still LOOKS like it
+    carries a directive while naming no record: observed on the KAS backend as
+    ``json-unparseable (JSONDecodeError)`` with the envelope's own ``"}`` still
+    attached to the payload's tail.
+
+    Keyed on the SENTINEL rather than on any envelope field name, because the
+    field differs per backend and the sentinel is a fixed control token this
+    process emitted itself. Requires EXACTLY ONE match: zero means there is no
+    directive here and the caller should keep dumping the envelope, while two or
+    more means the frame is ambiguous about which string is the directive, and
+    guessing between them could apply the wrong payload. Bounded walk
+    (``_max_nodes``, depth 6) so a pathological envelope cannot spin here.
+    """
+    hits: list[str] = []
+    budget = [_max_nodes]
+
+    def _walk(node: Any, depth: int) -> None:
+        if budget[0] <= 0 or depth > 6 or len(hits) > 1:
+            return
+        budget[0] -= 1
+        if isinstance(node, str):
+            if session_directive.has_marker(node):
+                hits.append(node)
+        elif isinstance(node, dict):
+            for value in node.values():
+                _walk(value, depth + 1)
+        elif isinstance(node, list):
+            for value in node:
+                _walk(value, depth + 1)
+
+    _walk(payload, 0)
+    return hits[0] if len(hits) == 1 else None
+
+
+def _repair_escaped_marker(text: str) -> str | None:
+    """Recover a directive marker whose payload arrived JSON-ESCAPED, or None.
+
+    Some backends (observed on KAS) hand the whole tool result back already
+    serialised as JSON, so the text this module receives is the DUMP of an
+    envelope rather than the envelope itself. Every quote in the embedded
+    directive is then ``\\"`` and the envelope's own ``"}`` is glued to the
+    payload's tail, so the sentinel still arrives intact while
+    ``session_directive.peek`` can no longer read a selector out of it -- the
+    frame names a directive it cannot identify, and the parked record is never
+    claimed.
+
+    Two recoveries, tried in order, because the escaping can wrap the WHOLE text
+    or just reach the marker:
+
+    1. The whole text parses as JSON -- take the one string inside it that
+       carries the sentinel (:func:`_marker_bearing_text` for a container, the
+       value itself for a bare string).
+    2. Only the marker line is escaped -- unescape it and ``raw_decode`` the
+       first JSON value, which ignores the envelope's trailing punctuation.
+
+    ACCEPTANCE IS THE TEST, not the shape: a candidate is returned only when
+    ``peek`` actually reads a selector from it, so a wrong guess degrades to
+    None and leaves the original text untouched rather than substituting
+    something worse.
+    """
+    if not text or not session_directive.has_marker(text):
+        return None
+    if session_directive.peek(text) is not None:
+        return None  # already readable -- nothing to repair
+    if text.count(session_directive.SENTINEL) > 1:
+        # Ambiguous: recovery (2) below reads the FIRST marker line, which would
+        # be a GUESS about which directive the frame meant. Applying the wrong
+        # directive is worse than applying none, and a real frame carries one
+        # marker (a second directive arrives under its own toolCallId), so refuse.
+        return None
+
+    # (1) the entire text is a JSON dump.
+    try:
+        outer = json.loads(text)
+    except (ValueError, TypeError):
+        outer = None
+    if isinstance(outer, str):
+        if session_directive.peek(outer) is not None:
+            return outer
+    elif isinstance(outer, (dict, list)):
+        inner = _marker_bearing_text(outer if isinstance(outer, dict) else {"_": outer})
+        if inner is not None and session_directive.peek(inner) is not None:
+            return inner
+
+    # (2) The escaped dump is only PART of the text -- another output part, or a
+    # line of prose, sits beside it -- so (1) cannot parse the whole thing. Undo
+    # the escaping on the marker's own line by decoding it AS the JSON string it
+    # came from: prepend the opening quote the dump's own key/colon consumed and
+    # raw_decode, which stops at that string's real closing quote and therefore
+    # ignores whatever the envelope glued onto the tail.
+    #
+    # A plain str.replace of \\" -> " CANNOT do this: a quote that was already
+    # escaped inside the directive (a message quoting a word) arrives as \\\\"
+    # and collapses to a dangling \\" that terminates the JSON string early, so
+    # every directive whose text contains a quote failed to recover.
+    idx = text.find(session_directive.SENTINEL)
+    if idx < 0:
+        return None
+    head = text[:idx]
+    line = text[idx + len(session_directive.SENTINEL) :].split("\n", 1)[0]
+    try:
+        unescaped, _end = json.JSONDecoder().raw_decode('"' + line)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(unescaped, str):
+        return None
+    candidate = head + session_directive.SENTINEL + unescaped
+    return candidate if session_directive.peek(candidate) is not None else None
+
+
 def _build_tool_result_event(update: dict[str, Any], cache_scope: str = "") -> AcpEvent | None:
     """Build an ``EVENT_TOOL_RESULT`` from a ``tool_call_update`` carrying output.
 
@@ -1201,6 +1320,20 @@ def _build_tool_result_event(update: dict[str, Any], cache_scope: str = "") -> A
                             output_parts.append(str(j["stdout"]))
                         else:
                             _mcp_text = _mcp_content_text(j)
+                            if _mcp_text is None:
+                                # Not a recognised text envelope. Before dumping
+                                # it -- which would escape every quote and
+                                # destroy an embedded directive payload -- check
+                                # whether one of its strings IS the directive.
+                                _mcp_text = _marker_bearing_text(j)
+                                if _mcp_text is not None:
+                                    logger.warning(
+                                        "tool-result envelope is not a text envelope but "
+                                        "carries a session-directive marker; using that "
+                                        "string verbatim instead of json.dumps, which "
+                                        "would escape its payload. Envelope keys: %s",
+                                        sorted(j.keys()),
+                                    )
                             if _mcp_text is not None:
                                 output_parts.append(_mcp_text)
                             else:
@@ -1208,6 +1341,29 @@ def _build_tool_result_event(update: dict[str, Any], cache_scope: str = "") -> A
     if not output_parts:
         return None
     joined = "\n".join(output_parts)
+    # Repair a marker that arrived JSON-escaped, BEFORE redaction and the head
+    # cut: the consumer reads its selector out of this exact string, and an
+    # escaped payload names no parked record (see _repair_escaped_marker).
+    _repaired = _repair_escaped_marker(joined)
+    if _repaired is not None:
+        logger.warning(
+            "tool-result text carried a JSON-ESCAPED session-directive marker; "
+            "repaired it so the selector is readable. Original head: %.200r",
+            joined[:200],
+        )
+        joined = _repaired
+    elif session_directive.has_marker(joined) and session_directive.peek(joined) is None:
+        # The frame names a directive whose selector cannot be read and the
+        # repair could not recover it either. Logged HERE because a silent None
+        # from the repair is indistinguishable downstream from a transport that
+        # never carried a marker at all -- which is what made this class of
+        # failure invisible.
+        logger.warning(
+            "tool-result carries a session-directive marker whose selector is "
+            "UNREADABLE and could not be repaired: %s. Original head: %.200r",
+            session_directive.peek_failure_reason(joined),
+            joined[:200],
+        )
     final_output = _redact(joined)[:8000]
     # An MCP App render marker lives at offset 0 of its own text part, but the
     # 8000-char join cut is applied to the CONCATENATION of all parts: when the

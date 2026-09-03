@@ -14,12 +14,30 @@ Each test here drives a REAL boundary end-to-end:
 * ``_build_tool_result_event`` — the ACP result parser, whose ``rawOutput``
   ``Json`` branch used to ``json.dumps`` the MCP content envelope, escaping the
   payload's quotes and non-ASCII so the marker line could not be parsed.
+* the same parser again, for an envelope it does NOT recognise as a text
+  envelope, or a result the backend hands back ALREADY serialised (observed on
+  KAS). Both reach ``json.dumps`` too, and the escaping leaves the quote-free
+  sentinel intact while destroying the payload behind it — so the frame still
+  looks like it carries a directive and names no parked record. The last class
+  here is a ratchet over every ``EVENT_TOOL_RESULT`` builder, because the person
+  who adds the next one is a new provider's author, who will not know this
+  constraint exists.
 """
 
+import ast
 import json
+import types
+
+from source_corpus import parsed_candidates, src_root
 
 from kiro_crew import session_directive as sd
-from kiro_crew.acp._dispatch import _build_tool_result_event, _mcp_content_text
+from kiro_crew.acp._dispatch import (
+    _build_tool_result_event,
+    _mcp_content_text,
+    parse_session_update,
+)
+from kiro_crew.acp.client import AcpClient
+from kiro_crew.acp.types import EVENT_TOOL_RESULT, JsonRpcMessage
 from kiro_crew.mcp_apps_render import find_marker
 from kiro_crew.mcp_gateway.apps import append_marker
 from kiro_crew.validation import build_tool_response, strip_hidden_unicode
@@ -220,3 +238,212 @@ class TestMcpAppMarkerSurvivesResultCuts:
         event = _build_tool_result_event(update)
         assert event is not None
         assert find_marker(event.tool_output) == self._id()
+
+
+# A quote INSIDE the directive's own text is the point of this fixture, not
+# decoration: encode escapes it once and the envelope's dump escapes it again, so
+# a recovery that merely replaces ``\"`` with ``"`` collapses it into a dangling
+# backslash-quote that ends the JSON string early. Every real monitor_start
+# message quotes its stop reason, so a fixture without a quote would pass against
+# a repair that cannot handle a single actual directive.
+MONITOR_ARGS = {
+    "message": 'Report the cycle. After cycle 3 call autonudge_stop with reason "done".',
+    "idle_secs": 60,
+    "max_cycles": 3,
+    "max_runtime_secs": 0,
+}
+
+
+def _monitor() -> str:
+    text = sd.encode("monitor_start", MONITOR_ARGS, "Armed: fires every 60s, 3 cycles.")
+    assert sd.peek(text) is not None, "fixture must start readable"
+    return text
+
+
+def _pre_serialised(text: str) -> str:
+    """The result as a backend hands it back: inside a serialised envelope."""
+    dumped = json.dumps({"stdout": text})
+    assert sd.has_marker(dumped), "the sentinel survives the dump"
+    assert sd.peek(dumped) is None, "but the selector does not"
+    return dumped
+
+
+def _update(**extra: object) -> dict[str, object]:
+    return {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "tc-1",
+        "status": "completed",
+        **extra,
+    }
+
+
+def _runtime_output(update: dict[str, object]) -> str | None:
+    """Drive the live consumer path: AcpRuntime -> handle -> parse_session_update."""
+    results = [
+        e for e in parse_session_update(update, cache_scope="scope") if e.kind == EVENT_TOOL_RESULT
+    ]
+    return results[0].tool_output if results else None
+
+
+class TestSurvivesUnrecognisedResultEnvelope:
+    """Defect 3: an envelope with no recognised text field must not be dumped
+    over a directive. The recovery keys on the SENTINEL, not on a field name,
+    because the field differs per backend."""
+
+    def test_directive_survives_any_envelope_key(self):
+        for key in ("output", "Ok", "result", "content"):
+            out = _runtime_output(_update(rawOutput={"items": [{"Json": {key: _monitor()}}]}))
+            assert sd.peek(out) == ("monitor_start", MONITOR_ARGS), key
+
+    def test_marker_free_envelope_is_still_serialised(self):
+        payload = {"exit_status": 0, "note": "hi"}
+        out = _runtime_output(_update(rawOutput={"items": [{"Json": payload}]}))
+        assert out == json.dumps(payload, default=str)
+
+    def test_two_competing_directives_are_not_guessed_between(self):
+        # Applying the WRONG directive is worse than applying none, so a frame
+        # naming two DIFFERENT directives must degrade rather than pick one --
+        # including at the join-point recovery, which reads the first marker line.
+        other = sd.encode("monitor_start", {**MONITOR_ARGS, "idle_secs": 900}, "Armed: every 900s.")
+        out = _runtime_output(
+            _update(rawOutput={"items": [{"Json": {"a": _monitor(), "b": other}}]})
+        )
+        assert sd.peek(out) is None
+        assert out is not None and out.startswith("{")
+
+
+class TestSurvivesPreSerialisedResultText:
+    """Defect 3b: the backend hands the result back already JSON-encoded, so the
+    text this parser receives is the DUMP of an envelope rather than the
+    envelope. Observed on KAS as ``json-unparseable (JSONDecodeError)`` with the
+    envelope's own ``"}`` still glued to the payload's tail."""
+
+    def test_recovered_from_every_output_shape(self):
+        escaped = _pre_serialised(_monitor())
+        shapes = {
+            "Json.stdout": _update(rawOutput={"items": [{"Json": {"stdout": escaped}}]}),
+            "Text": _update(rawOutput={"items": [{"Text": escaped}]}),
+            "content block": _update(content=[{"content": {"type": "text", "text": escaped}}]),
+        }
+        for label, update in shapes.items():
+            assert sd.peek(_runtime_output(update)) == (
+                "monitor_start",
+                MONITOR_ARGS,
+            ), label
+
+    def test_recovered_when_it_is_only_one_of_several_parts(self):
+        # The live shape: prose beside the escaped envelope, so the JOINED text
+        # does not parse as JSON and the recovery must work from the marker's own
+        # line. This is what a whole-text json.loads alone cannot reach.
+        out = _runtime_output(
+            _update(
+                content=[
+                    {"content": {"type": "text", "text": "tool ran"}},
+                    {"content": {"type": "text", "text": _pre_serialised(_monitor())}},
+                ]
+            )
+        )
+        assert sd.peek(out) == ("monitor_start", MONITOR_ARGS)
+        assert out is not None and out.startswith("tool ran")
+
+    def test_a_readable_directive_is_passed_through_byte_identical(self):
+        marker = _monitor()
+        out = _runtime_output(_update(content=[{"content": {"type": "text", "text": marker}}]))
+        assert out == marker
+
+    def test_plain_text_output_is_untouched(self):
+        out = _runtime_output(_update(content=[{"content": {"type": "text", "text": "ok"}}]))
+        assert out == "ok"
+
+
+class TestSurvivesTheAcpClientParser:
+    """``providers/acp.py``'s own builder, ``AcpClient._extract_tool_call_update``:
+    a second, independent parser with the same envelope shapes and the same
+    defect class."""
+
+    @staticmethod
+    def _output(update: dict[str, object]) -> str | None:
+        fake = types.SimpleNamespace(_session_id="sess-1")
+        msg = JsonRpcMessage(method="session/update", params={"update": update})
+        event = AcpClient._extract_tool_call_update(fake, msg)
+        return event.tool_output if event else None
+
+    def test_directive_survives_unrecognised_envelope(self):
+        out = self._output(_update(rawOutput={"items": [{"Json": {"result": _monitor()}}]}))
+        assert sd.peek(out) == ("monitor_start", MONITOR_ARGS)
+
+    def test_directive_survives_pre_serialised_text(self):
+        out = self._output(_update(rawOutput={"items": [{"Text": _pre_serialised(_monitor())}]}))
+        assert sd.peek(out) == ("monitor_start", MONITOR_ARGS)
+
+    def test_a_readable_directive_is_passed_through_byte_identical(self):
+        marker = _monitor()
+        out = self._output(_update(content=[{"content": {"type": "text", "text": marker}}]))
+        assert out == marker
+
+    def test_marker_free_envelope_is_still_serialised(self):
+        payload = {"exit_status": 0}
+        out = self._output(_update(rawOutput={"items": [{"Json": payload}]}))
+        assert out == json.dumps(payload, default=str)
+
+
+class TestEveryToolResultBuilderRepairsTheMarker:
+    """Ratchet: a NEW builder cannot skip the recovery.
+
+    The defect was never one bad builder -- it was that several independent
+    builders can emit an ``EVENT_TOOL_RESULT`` and the fix has to hold at each.
+    The requirement is enforced here rather than left in a comment because the
+    author who adds the next builder is a new provider's, and
+    docs/system-specs/features/agent-host-contract.md §9 is the declaration they
+    are meant to answer."""
+
+    REQUIRED = "_repair_escaped_marker"
+
+    @classmethod
+    def _builders(cls) -> list[tuple[str, str, bool]]:
+        """``(file, function, repairs?)`` per ``EVENT_TOOL_RESULT`` construction."""
+        found: list[tuple[str, str, bool]] = []
+        acp_dir = src_root() / "acp"
+        for path, _text, tree in parsed_candidates(require_all=("EVENT_TOOL_RESULT",)):
+            if acp_dir not in path.parents:
+                continue
+            for func in ast.walk(tree):
+                if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                builds = any(
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "AcpEvent"
+                    and any(
+                        kw.arg == "kind"
+                        and isinstance(kw.value, ast.Name)
+                        and kw.value.id == "EVENT_TOOL_RESULT"
+                        for kw in node.keywords
+                    )
+                    for node in ast.walk(func)
+                )
+                if not builds:
+                    continue
+                repairs = any(
+                    isinstance(node, ast.Name) and node.id == cls.REQUIRED
+                    for node in ast.walk(func)
+                )
+                found.append((path.name, func.name, repairs))
+        return found
+
+    def test_every_builder_runs_the_repair(self):
+        offenders = [f"{file}::{func}" for file, func, repairs in self._builders() if not repairs]
+        assert not offenders, (
+            f"these EVENT_TOOL_RESULT builders never call {self.REQUIRED} over "
+            "their joined output, so a JSON-escaped session-directive marker "
+            f"reaching them is dropped silently: {offenders}. See "
+            "docs/system-specs/features/agent-host-contract.md §9."
+        )
+
+    def test_the_gate_sees_the_builders_it_is_meant_to_cover(self):
+        # Without this, renaming AcpEvent (or breaking the AST match) would make
+        # the gate above pass over an empty set.
+        seen = {(file, func) for file, func, _ in self._builders()}
+        assert ("_dispatch.py", "_build_tool_result_event") in seen
+        assert ("client.py", "_extract_tool_call_update") in seen
+        assert len(seen) >= 3, seen
