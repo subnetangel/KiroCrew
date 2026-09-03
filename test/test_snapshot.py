@@ -13,6 +13,7 @@ import pytest
 
 from conftest import requires_symlinks
 from kiro_crew import snapshot as snapshot_mod
+from kiro_crew.jsonl_util import OversizedRecord, UndecodableRecord, UnreadableRecord
 from kiro_crew.snapshot import restore_main, snapshot_main
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1301,3 +1302,225 @@ class TestMergeRestoreLocksBeforePublish:
         monkeypatch.setattr(snapshot_mod.os, "close", _close)
         snapshot_mod._do_merge(snap, home, ["security"], allow_unpinned=bool(unpinnable_argv()))
         assert not (home / "telemetry_salt").exists()
+
+
+class TestNotificationMergeWriteSideContract:
+    """The notification merge copies records, so its bytes must be valid FOR THE DESTINATION.
+
+    Every fixture here is real BYTES written to a real file. A synthesized
+    ``UnicodeDecodeError`` would route the merge down a healthy path and prove
+    nothing: the defect was that the decode happened at ``for line in f``,
+    OUTSIDE the ``try``, so the failure never took the branch a fake exception
+    would have taken.
+    """
+
+    LIVE = b'{"ts":"2026-02-01T00:00:00Z","msg":"local"}\n'
+    GOOD = b'{"ts":"2026-03-01T00:00:00Z","msg":"snap"}\n'
+    # 0xff is invalid UTF-8 anywhere; a truncated multi-byte lead is the
+    # ordinary way a real file gets there.
+    BAD_UTF8 = b'{"ts":"2026-03-02T00:00:00Z","msg":"\xff"}\n'
+
+    def _files(self, tmp_path, src_bytes: bytes, dst_bytes: bytes):
+        src = tmp_path / "snap-notifications.jsonl"
+        dst = tmp_path / "live-notifications.jsonl"
+        src.write_bytes(src_bytes)
+        dst.write_bytes(dst_bytes)
+        return src, dst
+
+    @staticmethod
+    def _merge_must_not_abort(src, dst) -> None:
+        """Call the merge, turning an escaping exception into a NAMED failure.
+
+        Several properties here are "a record of this shape must not abort the
+        restore", and the pre-fix behaviour was an escaping exception. Letting it
+        surface raw would report the red as an incidental error; ``pytest.fail``
+        makes the red say which property broke.
+        """
+        try:
+            snapshot_mod._merge_notifications(src, dst)
+        except Exception as exc:  # noqa: BLE001 — the subject is that it does not
+            pytest.fail(f"the merge aborted instead of handling the record: {exc!r}")
+
+    # ── encoding ──────────────────────────────────────────────────────────
+
+    def test_an_invalid_utf8_source_record_never_reaches_the_live_file(self, tmp_path, capsys):
+        """The whole point: the live file must stay loadable.
+
+        Its loader decodes the WHOLE file and returns no rows at all on one bad
+        byte, after which the next rewrite persists that empty view -- so a
+        single appended bad record costs every record that was already there.
+        """
+        src, dst = self._files(tmp_path, self.GOOD + self.BAD_UTF8, self.LIVE)
+        with pytest.raises(UndecodableRecord):
+            snapshot_mod._merge_notifications(src, dst)
+        after = dst.read_bytes()
+        assert b"\xff" not in after
+        after.decode("utf-8")  # the property that matters: still loadable
+        out = capsys.readouterr().out
+        assert "Notifications imported:" not in out, "reported success on a failed merge"
+        assert "not valid UTF-8" in out
+
+    def test_the_failure_reaches_the_caller_and_is_not_only_printed(self, tmp_path):
+        """A warn-and-return would tell an API caller the import succeeded.
+
+        ``apply_import_zip`` appends ``notifications (merged)`` to its summary
+        unconditionally, and the dashboard handler answers ``ok: True`` with a
+        SEL ``outcome="ok"``. Neither sees stdout. So the merge has to raise, or
+        an import that left records behind is reported as one that did not.
+        Pinned separately from the byte-level assertions because it is a
+        contract with the CALLER, not with the file.
+        """
+        for label, src_bytes, dst_bytes in (
+            ("source", self.GOOD + self.BAD_UTF8, self.LIVE),
+            ("destination", self.GOOD, self.LIVE + self.BAD_UTF8),
+        ):
+            src, dst = self._files(tmp_path, src_bytes, dst_bytes)
+            with pytest.raises(UnreadableRecord):
+                snapshot_mod._merge_notifications(src, dst)
+            assert True, label
+
+    def test_an_invalid_utf8_record_already_in_the_live_file_is_a_true_no_op(
+        self, tmp_path, capsys
+    ):
+        """The destination scan is its own failure domain and must write nothing.
+
+        This is the site the issue's own criterion required and did not name.
+        The scan used to run in text mode too, so pre-existing live corruption
+        aborted the merge with a traceback before the copy loop was reached; it
+        still aborts, but now with a named reason and without having touched the
+        destination.
+        """
+        src, dst = self._files(tmp_path, self.GOOD, self.LIVE + self.BAD_UTF8)
+        before = dst.read_bytes()
+        with pytest.raises(UndecodableRecord):
+            snapshot_mod._merge_notifications(src, dst)
+        assert dst.read_bytes() == before, "destination-scan failure was not a no-op"
+        out = capsys.readouterr().out
+        assert "Notifications imported:" not in out
+        assert "notification merge aborted" in out
+
+    # ── boundary and byte-exactness ───────────────────────────────────────
+
+    def test_a_crlf_terminated_record_keeps_its_carriage_return(self, tmp_path):
+        """Row D of the measurement: text mode DROPPED the ``\\r``.
+
+        Universal newlines translated ``\\r\\n`` to ``\\n`` on read and
+        ``os.linesep`` put back only ``\\n`` on write, so the appended record
+        was one byte shorter than the record on disk. This fires on a pure UTF-8
+        host with fully valid UTF-8 input, which is why an explicit
+        ``encoding=`` does not address it -- ``newline=`` is a separate axis.
+        """
+        src_bytes = b'{"ts":"2026-03-03T00:00:00Z","msg":"crlf"}\r\n'
+        src, dst = self._files(tmp_path, src_bytes, self.LIVE)
+        snapshot_mod._merge_notifications(src, dst)
+        assert dst.read_bytes() == self.LIVE + src_bytes
+
+    def test_a_record_holding_a_bare_carriage_return_is_not_silently_lost(self, tmp_path, capsys):
+        """Row E: the strongest demonstration, and it needs no bad encoding.
+
+        A VALID UTF-8 record containing a bare ``\\r`` was split by universal
+        newlines, both halves then failed ``json.loads``, the
+        ``except (ValueError, TypeError): pass`` swallowed both, and the merge
+        printed ``imported: 0`` and returned success. The record was gone from
+        the live file permanently. Data loss on the default configuration.
+        """
+        src_bytes = b'{"ts":"2026-03-04T00:00:00Z","msg":"a\rb"}\n'
+        src, dst = self._files(tmp_path, src_bytes, self.LIVE)
+        self._merge_must_not_abort(src, dst)
+        assert dst.read_bytes() == self.LIVE + src_bytes
+        assert "Notifications imported: 0" not in capsys.readouterr().out
+
+    # ── framing ───────────────────────────────────────────────────────────
+
+    def test_an_unterminated_live_record_gains_a_terminator_before_any_append(self, tmp_path):
+        """A crash mid-append leaves the live file without a final terminator.
+
+        Appending onto it glued two records into one line that parses as
+        neither, so both were lost to the loader.
+        """
+        unterminated = b'{"ts":"2026-02-02T00:00:00Z","msg":"torn"}'
+        src, dst = self._files(tmp_path, self.GOOD, unterminated)
+        snapshot_mod._merge_notifications(src, dst)
+        after = dst.read_bytes()
+        assert after == unterminated + b"\n" + self.GOOD
+        rows = [json.loads(line) for line in after.splitlines() if line.strip()]
+        assert [r["msg"] for r in rows] == ["torn", "snap"]
+
+    def test_an_unterminated_source_record_is_terminated_as_it_is_appended(self, tmp_path):
+        """Otherwise the NEXT append glues onto it, moving the same defect."""
+        src, dst = self._files(tmp_path, b'{"ts":"2026-03-05T00:00:00Z"}', self.LIVE)
+        snapshot_mod._merge_notifications(src, dst)
+        assert dst.read_bytes() == self.LIVE + b'{"ts":"2026-03-05T00:00:00Z"}\n'
+
+    # ── dedupe key type ───────────────────────────────────────────────────
+
+    def test_a_non_object_record_does_not_abort_the_merge(self, tmp_path, capsys):
+        """``json.loads(raw).get("ts")`` raised AttributeError on a JSON array.
+
+        The record is unparseable AS A NOTIFICATION but its bytes are still
+        history, so it is copied and keyed by its raw form -- not dropped, which
+        would delete it.
+        """
+        src_bytes = b"[1, 2]\n" + self.GOOD
+        src, dst = self._files(tmp_path, src_bytes, self.LIVE)
+        self._merge_must_not_abort(src, dst)
+        assert dst.read_bytes() == self.LIVE + src_bytes
+        assert "Notifications imported: 2" in capsys.readouterr().out
+
+    def test_an_unhashable_ts_does_not_abort_the_merge(self, tmp_path, capsys):
+        """A list or dict ``ts`` raised TypeError on set insert."""
+        src_bytes = b'{"ts":[1,2],"msg":"weird"}\n' + b'{"ts":{"a":1},"msg":"weirder"}\n'
+        src, dst = self._files(tmp_path, src_bytes, self.LIVE)
+        self._merge_must_not_abort(src, dst)
+        assert dst.read_bytes() == self.LIVE + src_bytes
+        assert "Notifications imported: 2" in capsys.readouterr().out
+
+    def test_a_raw_keyed_record_cannot_collide_with_a_ts_keyed_one(self, tmp_path, capsys):
+        """The key carries its kind, so an unparseable row whose text equals
+        another record's ``ts`` value is still its own record."""
+        src_bytes = b"2026-02-01T00:00:00Z\n"
+        src, dst = self._files(tmp_path, src_bytes, self.LIVE)
+        snapshot_mod._merge_notifications(src, dst)
+        assert dst.read_bytes() == self.LIVE + src_bytes
+        assert "Notifications imported: 1" in capsys.readouterr().out
+
+    # ── bound ─────────────────────────────────────────────────────────────
+
+    def test_an_over_cap_record_aborts_instead_of_being_skipped(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        """A skipped record here is a permanently deleted one, so it aborts.
+
+        The cap is moved rather than writing a 128 MiB fixture; the read is a
+        global lookup at call time for exactly that reason.
+        """
+        monkeypatch.setattr(snapshot_mod, "_NOTIFICATION_RECORD_CAP", 64)
+        oversized = b'{"ts":"2026-03-06T00:00:00Z","msg":"' + b"x" * 200 + b'"}\n'
+        src, dst = self._files(tmp_path, self.GOOD + oversized, self.LIVE)
+        with pytest.raises(OversizedRecord):
+            snapshot_mod._merge_notifications(src, dst)
+        after = dst.read_bytes()
+        assert b"x" * 200 not in after
+        out = capsys.readouterr().out
+        assert "Notifications imported:" not in out
+        assert "record over 64 bytes" in out
+
+    # ── failure posture ───────────────────────────────────────────────────
+
+    def test_a_source_failure_keeps_its_prefix_and_a_re_run_adds_no_duplicate(
+        self, tmp_path, capsys
+    ):
+        """Abort, not roll back: the prefix is real history and stays.
+
+        Idempotency comes from ``existing`` being rebuilt off the destination,
+        so a second run over the same broken source re-appends nothing.
+        """
+        src, dst = self._files(tmp_path, self.GOOD + self.BAD_UTF8, self.LIVE)
+        with pytest.raises(UndecodableRecord):
+            snapshot_mod._merge_notifications(src, dst)
+        after_first = dst.read_bytes()
+        assert after_first == self.LIVE + self.GOOD, "the good prefix was not kept"
+        assert "after 1 record(s)" in capsys.readouterr().out
+        with pytest.raises(UndecodableRecord):
+            snapshot_mod._merge_notifications(src, dst)
+        assert dst.read_bytes() == after_first, "the re-run duplicated the prefix"

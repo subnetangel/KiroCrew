@@ -21,6 +21,12 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Any, Callable
 
 from kiro_crew import pinned_fs, platform_compat
+from kiro_crew.jsonl_util import (
+    RECORD_CAP,
+    UndecodableRecord,
+    UnreadableRecord,
+    strict_raw_records,
+)
 
 if TYPE_CHECKING:
     from kiro_crew import snapshot_redact
@@ -2370,25 +2376,132 @@ def _merge_crons(src_path: Path, dst_path: Path) -> None:
     print(f"  Cron jobs imported: {imported} (skipped {total - imported} duplicates)")
 
 
+_TERMINATORS = (b"\n", b"\r")
+
+# Longest single notification record either side of the merge will materialise.
+# Both trees are agent-writable and the read feeds an append to a durable file,
+# so an over-cap record aborts rather than being skipped. Named here, and read at
+# call time, so a test can move the dial instead of writing a 128 MiB fixture --
+# the same reason `subagent_cost` names its own.
+_NOTIFICATION_RECORD_CAP = RECORD_CAP
+
+
+def _notification_key(record: bytes, path: Path) -> tuple[str, str] | tuple[str, bytes]:
+    """The dedupe key for one raw notification record.
+
+    Well-defined and hashable for EVERY record shape, which the previous
+    ``json.loads(line).get("ts") or line.strip()`` was not: a non-object
+    record raised ``AttributeError`` off ``.get``, and a list or dict ``ts``
+    raised ``TypeError`` on set insert. Both escaped as an aborted restore.
+
+    The kind is part of the key, so a raw record whose text happens to equal
+    another record's ``ts`` cannot collide with it. The raw form is stripped,
+    so the same record dedupes whether it is terminated ``\\n`` or ``\\r\\n``
+    -- the destinations the text-mode predecessor wrote were newline-normalised
+    on the way in, and this reader no longer normalises anything.
+
+    Raises :class:`UndecodableRecord` for a record that is not valid UTF-8,
+    which is how the encoding property is enforced: this decode VALIDATES and
+    the result is used only for the key, while what gets appended is always the
+    original bytes. Validating by decoding and then writing the decoded form
+    back is what makes the copy non-byte-exact in the first place.
+    """
+    try:
+        text = record.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise UndecodableRecord(f"record is not valid UTF-8 in {path!r}") from exc
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return ("raw", record.strip())
+    ts = parsed.get("ts") if isinstance(parsed, dict) else None
+    # `isinstance(ts, str) and ts` reproduces the predecessor's `or` fallback
+    # (an empty or absent ts fell through to the line) while refusing the
+    # unhashable shapes that used to abort the restore.
+    if isinstance(ts, str) and ts:
+        return ("ts", ts)
+    return ("raw", record.strip())
+
+
 def _merge_notifications(src_path: Path, dst_path: Path) -> None:
-    existing: set[str] = set()
-    with open(dst_path) as f:
-        for line in f:
-            try:
-                existing.add(json.loads(line).get("ts") or line.strip())
-            except (ValueError, TypeError):
-                pass
+    """Append the snapshot's notification records to the live file, byte for byte.
+
+    This is the only merge that COPIES records rather than consuming them, so
+    reading faithfully is not the whole contract -- the bytes must also be valid
+    for the destination. Both handles are BINARY and framing comes from
+    :func:`strict_raw_records`, because the text-mode predecessor was a locale
+    decode followed by a locale encode and neither half was byte-exact:
+
+    * Universal-newline translation on read, ``os.linesep`` on write. A record
+      terminated ``\\r\\n`` was appended as ``\\n`` -- a byte silently dropped --
+      and a bare ``\\r`` INSIDE a record split it in two, so both halves failed
+      ``json.loads``, the ``except`` swallowed both, and the record was lost
+      while the function printed success. Both fire on a pure UTF-8 host with
+      fully valid UTF-8 input, so an explicit ``encoding=`` does not address
+      them; ``newline=`` is a separate axis and binary mode closes both at once.
+    * The locale codec decided whether an invalid-UTF-8 record aborted the
+      restore or was delivered into the live file. ``for line in f`` decodes
+      OUTSIDE the ``try``, so ``UnicodeDecodeError`` -- a ``ValueError`` --
+      escaped the ``except (ValueError, TypeError)`` because the iterator raised
+      it, not ``json.loads``. On a UTF-8 host that aborted the restore with a
+      traceback; under a single-byte locale the decode succeeded, the encode put
+      the same bytes back, and the live file stopped being valid UTF-8 -- after
+      which its loader returns NO rows for the whole file and the next rewrite
+      persists that empty view.
+
+    The posture is ABORT, never skip, because the output feeds a durable write
+    and a skipped record is a deleted one. Abort means RAISE, not warn: this
+    function's callers report an outcome to somebody. ``apply_import_zip``
+    appends ``notifications (merged)`` to its summary and the dashboard handler
+    answers ``ok: True`` with a SEL ``outcome="ok"``, and a printed warning is
+    invisible to both -- so warn-and-return would tell an API caller the import
+    succeeded while records were left behind. The print stays so a CLI operator
+    reads the reason before the traceback. This is why it differs from
+    ``_merge_crons``, which warns and returns: a refused cron merge writes
+    nothing and skips one component, while this one may already have appended a
+    prefix, and the caller has to learn the write is incomplete.
+
+    * A destination-scan failure is still a true no-op -- the destination is not
+      even opened for append until that scan has completed.
+    * A source-scan failure leaves the prefix already appended in place. It is
+      not rolled back, because a re-run rebuilds ``existing`` from the
+      destination and therefore skips exactly what landed.
+
+    Every appended record ends with a terminator, and an unterminated final
+    record already in the destination gains one before anything is appended
+    after it. Without that, two records glued into one line that parses as
+    neither.
+    """
+    existing: set[tuple[str, str] | tuple[str, bytes]] = set()
+    dst_unterminated = False
+    try:
+        with open(dst_path, "rb") as f:
+            for record in strict_raw_records(f, dst_path, cap=_NOTIFICATION_RECORD_CAP):
+                existing.add(_notification_key(record, dst_path))
+                dst_unterminated = not record.endswith(_TERMINATORS)
+    except (OSError, UnreadableRecord) as exc:
+        print(f"  ⚠️  Could not read {dst_path}: {exc} — notification merge aborted")
+        raise
     imported = 0
-    with open(dst_path, "a") as out, open(src_path) as f:
-        for line in f:
-            try:
-                key = json.loads(line).get("ts") or line.strip()
-                if key not in existing:
-                    out.write(line)
-                    existing.add(key)
-                    imported += 1
-            except (ValueError, TypeError):
-                pass
+    try:
+        with open(dst_path, "ab") as out, open(src_path, "rb") as f:
+            if dst_unterminated:
+                out.write(b"\n")
+            for record in strict_raw_records(f, src_path, cap=_NOTIFICATION_RECORD_CAP):
+                key = _notification_key(record, src_path)
+                if key in existing:
+                    continue
+                out.write(record if record.endswith(_TERMINATORS) else record + b"\n")
+                existing.add(key)
+                imported += 1
+    except (OSError, UnreadableRecord) as exc:
+        # Names the count, so an operator reading the CLI knows a prefix landed
+        # and a re-run is safe. The raise is what the CALLER needs: without it
+        # the summary and the API both report an import that did not finish as
+        # one that did.
+        print(f"  ⚠️  Stopped merging {src_path} after {imported} record(s): {exc}")
+        raise
+    print(f"  Notifications imported: {imported}")
     print(f"  Notifications imported: {imported}")
 
 
