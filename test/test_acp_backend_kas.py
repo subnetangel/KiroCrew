@@ -27,6 +27,7 @@ from kiro_crew.acp.types import (
     ACP_BACKEND_CODEX,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKENDS_ACP_RUNTIME,
     ACP_BACKENDS_KNOWN,
     ACP_BACKENDS_SESSION_EVICTION,
@@ -44,7 +45,7 @@ from kiro_crew.session import SessionManager
 #: stated independently of the frozenset the provider property reads. A test that
 #: compared the property against that same frozenset would agree with itself no
 #: matter which harnesses were in it.
-ON_THE_ACP_RUNTIME = {ACP_BACKEND_KIRO, ACP_BACKEND_KAS, ACP_BACKEND_CODEX}
+ON_THE_ACP_RUNTIME = {ACP_BACKEND_KIRO, ACP_BACKEND_KAS, ACP_BACKEND_CODEX, ACP_BACKEND_MUSE}
 
 
 def _build_provider(backend: str) -> AcpProvider:
@@ -92,6 +93,7 @@ class TestBackendPredicates:
             provider.is_pi_backend,
             provider.is_goose_backend,
             provider.is_deepseek_backend,
+            provider.is_muse_backend,
         ]
         assert sum(held) == 1
 
