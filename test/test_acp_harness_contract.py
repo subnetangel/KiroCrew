@@ -130,13 +130,21 @@ def test_the_registry_serves_every_backend_it_claims_to():
 
     A harness added to the table without the message being regenerated from it would
     tell an operator the runtime serves fewer hosts than it does.
+
+    ``_HARNESSES`` is a SUPERSET of ``ALL_BACKENDS``: it also holds Muse, which is
+    REGISTERED but dormant (``Routing.UNVERIFIED``). A harness is written and
+    registered -- so its own tests can reach it -- before it is verified and routed,
+    so the registry carries it while the verified-contract list above deliberately
+    does not. What this test still pins is that every KEY of the registry is named in
+    the refusal message, Muse included.
     """
     from kiro_crew.acp.harness import _HARNESSES
+    from kiro_crew.acp.types import ACP_BACKEND_MUSE
 
-    assert set(_HARNESSES) == set(ALL_BACKENDS)
+    assert set(_HARNESSES) == set(ALL_BACKENDS) | {ACP_BACKEND_MUSE}
     with pytest.raises(ValueError) as exc:
         harness_for("byo-harness")
-    for backend in ALL_BACKENDS:
+    for backend in _HARNESSES:
         assert repr(backend) in str(exc.value)
 
 
@@ -1171,9 +1179,17 @@ def test_an_enforced_host_may_not_spawn_without_a_mask():
             # Asks by construction: no mask needed, and none claimed.
             assert "extra_hidden_dirs" not in source, backend
             continue
+        if not acp_tool_gate.is_enforced(backend):
+            # Registered but NOT enforced -- a dormant harness whose routing is
+            # UNVERIFIED (Muse today). The mask is the compensating control for an
+            # ENFORCED host's passive reads, so a harness this core does not enforce
+            # must carry none: claiming one would assert a control that never runs.
+            # It arms the moment the routing is verified and enforcement turns on.
+            assert "extra_hidden_dirs" not in source, backend
+            continue
         assert "extra_hidden_dirs=" in source, (
-            f"{backend} is not AGENT_SPEC-routed, so its harness must resolve an "
-            f"OS credential mask and put it on the plan"
+            f"{backend} is not AGENT_SPEC-routed and IS enforced, so its harness must "
+            f"resolve an OS credential mask and put it on the plan"
         )
 
 
@@ -1267,6 +1283,11 @@ def test_an_enforced_host_must_consult_the_sandbox_tier():
 
     for backend, harness_cls in _HARNESSES.items():
         if acp_tool_gate.routing_for(backend) is acp_tool_gate.Routing.AGENT_SPEC:
+            continue
+        if not acp_tool_gate.is_enforced(backend):
+            # A dormant, unenforced harness (UNVERIFIED routing) resolves no mask, so
+            # it has nothing to refuse-where-dropped and need not read the tier. It
+            # must consult it once its routing is verified and it becomes enforced.
             continue
         source = inspect.getsource(harness_cls.resolve_spawn)
         assert "sandbox_mode" in source, (
