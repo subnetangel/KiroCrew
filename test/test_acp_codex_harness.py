@@ -60,6 +60,7 @@ from kiro_crew.acp.types import (
     ACP_BACKEND_CODEX,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKENDS_ACP_RUNTIME,
     ACP_BACKENDS_ADVERTISED_MODEL_SELECTION,
     ACP_BACKENDS_EFFORT_VIA_CONFIG_OPTION,
@@ -953,9 +954,14 @@ class TestCodexIsServedByTheSharedRuntime:
         assert _build_provider(ACP_BACKEND_CODEX).is_acp_runtime_backend is True
 
     def test_the_shipped_set_names_it(self):
-        """Pinned as a literal set, so gaining or losing a member is a visible edit."""
+        """Pinned as a literal set, so gaining or losing a member is a visible edit.
+
+        Muse joined as the second non-kiro member: it is codex-shaped (the adapter
+        multiplexes sessions over one host), so it takes the AcpRuntime transport even
+        while it is dormant.
+        """
         assert ACP_BACKENDS_ACP_RUNTIME == frozenset(
-            {ACP_BACKEND_KIRO, ACP_BACKEND_KAS, ACP_BACKEND_CODEX}
+            {ACP_BACKEND_KIRO, ACP_BACKEND_KAS, ACP_BACKEND_CODEX, ACP_BACKEND_MUSE}
         )
 
     def test_the_other_harnesses_keep_their_answers(self):
