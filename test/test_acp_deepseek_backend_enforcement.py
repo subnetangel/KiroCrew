@@ -599,14 +599,21 @@ def test_a_routed_harness_still_registers() -> None:
 def test_no_known_backend_is_unverified() -> None:
     """The audit the refusal rests on, kept as a test so it cannot go quietly stale.
 
-    deepseek was the one member of this set, and this change empties it. If a
-    harness ever resolves to ``UNVERIFIED`` again -- including by being absent from
-    the routing table, which ``routing_for`` answers ``UNVERIFIED`` for -- the
-    refusal above starts applying to it. That may be right, but it must be noticed
-    rather than discovered when an edition's registration begins failing.
+    deepseek was the one member of this set, and this change emptied it. Muse is the
+    one member again, and DELIBERATELY: it is dormant, so its routing is
+    ``UNVERIFIED`` on purpose, which is exactly what keeps it out of the shipped
+    baseline. The audit is therefore that the UNVERIFIED ids are EXACTLY the ids a
+    dormant landing names -- the ones in ``ACP_BACKENDS_KNOWN`` that the baseline does
+    not ship -- so an id that becomes unverified by accident (a missing routing row,
+    which ``routing_for`` answers ``UNVERIFIED`` for) still fails here, while a
+    deliberately dormant one does not read as a defect.
     """
     unverified = {b for b in ACP_BACKENDS_KNOWN if routing_for(b) is Routing.UNVERIFIED}
-    assert unverified == set()
+    # A dormant harness is KNOWN but not shipped-selectable; those are the only ids
+    # allowed to be UNVERIFIED. An unverified id that IS in the baseline, or an
+    # unshipped id that is NOT unverified for some other reason, both still fail.
+    dormant = set(ACP_BACKENDS_KNOWN) - set(BASELINE_SELECTABLE_BACKENDS)
+    assert unverified == dormant
     # Every known id is named EXPLICITLY, so none of them is unverified merely by
     # omission.
     from kiro_crew.acp_backends import ACP_BACKEND_ROUTING

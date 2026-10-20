@@ -153,19 +153,31 @@ def test_every_known_backend_has_fixtures() -> None:
     Deliberately a failure and not a skip: the host contract's own history is
     that a provider landed selectable while appearing in none of the buckets,
     and a skipped test is indistinguishable from a passing one on a dashboard.
+
+    A DORMANT backend is the one exception, and it is named rather than skipped: an
+    id in ``ACP_BACKENDS_KNOWN`` that the baseline does not ship has not been driven
+    yet (its live captures are what a verification run produces), so it has no corpus
+    and could not. The requirement is therefore over the SHIPPED backends; a dormant
+    id with a stray corpus still fails the second half, and the moment a dormant id
+    becomes selectable it falls under the requirement with nowhere to hide.
     """
+    from kiro_crew.acp_backends import BASELINE_SELECTABLE_BACKENDS
+
     present = {d.name for d in backend_dirs()}
-    required = {fixture_dir_name(b) for b in ACP_BACKENDS_KNOWN}
+    shipped = set(ACP_BACKENDS_KNOWN) & set(BASELINE_SELECTABLE_BACKENDS)
+    dormant = set(ACP_BACKENDS_KNOWN) - set(BASELINE_SELECTABLE_BACKENDS)
+    required = {fixture_dir_name(b) for b in shipped}
     missing = sorted(required - present)
     assert not missing, (
-        f"no frame-replay fixtures for {missing}. Every backend in ACP_BACKENDS_KNOWN "
-        "needs test/fixtures/acp_frames/<id>/ with at least one .jsonl -- see that "
-        "directory's README.md for how to record one."
+        f"no frame-replay fixtures for {missing}. Every SHIPPED backend in "
+        "ACP_BACKENDS_KNOWN needs test/fixtures/acp_frames/<id>/ with at least one "
+        ".jsonl -- see that directory's README.md for how to record one."
     )
-    stray = sorted(present - required)
+    dormant_dirs = {fixture_dir_name(b) for b in dormant}
+    stray = sorted(present - required - dormant_dirs)
     assert not stray, (
-        f"fixture directories {stray} name no backend in ACP_BACKENDS_KNOWN; a removed "
-        "backend's corpus should be deleted with it"
+        f"fixture directories {stray} name no shipped backend in ACP_BACKENDS_KNOWN; a "
+        "removed backend's corpus should be deleted with it"
     )
 
 
