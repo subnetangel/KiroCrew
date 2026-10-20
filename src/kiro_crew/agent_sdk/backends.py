@@ -304,6 +304,24 @@ ACP_BACKEND_GOOSE = "goose"
 # closure -- so one global install is the whole precondition, with no workspace
 # checkout and no per-profile dependency step.
 ACP_BACKEND_DEEPSEEK = "deepseek"
+# Muse Code (Meta's terminal coding agent) reached through a third-party npm adapter,
+# ``@bex-co/muse-code-acp``. TWO components, codex-shaped: ``muse`` serves MSP (Meta's
+# own protocol) over stdio from ``muse serve`` and does NOT speak ACP, so the adapter
+# is the ACP transport and ``muse`` is the host it drives -- either can be absent on
+# its own, and the install probe names whichever is. Driven through ``AcpRuntime`` like
+# codex (the adapter multiplexes sessions over one ``muse serve``). Its MSP permission
+# mode is a CLOSED enum (``allowAll | promptUnmatched | onRequest | denyUnmatched``)
+# and the ``Session`` object reads the effective mode back, which is the seam Crew's
+# ``VERIFIED_SEEDED_SETTINGS`` routing would use.
+#
+# LANDS DORMANT. At onboarding the live seam -- that Crew can seed ``promptUnmatched``
+# at ``session/new`` and read it back before the first prompt -- is not yet proven on
+# this host's Muse 1.4.11, so its routing is ``Routing.UNVERIFIED`` and it is named in
+# ``NOT_SHIPPED_SELECTABLE`` rather than faking a read-back or relaxing a gate. Its id
+# is spellable, it carries a complete card, an auth declaration and an install probe,
+# and it flips to selectable by proving the seed/read-back and declaring
+# ``VERIFIED_SEEDED_SETTINGS`` -- a one-stage change, not a re-litigation.
+ACP_BACKEND_MUSE = "muse"
 # The kiro-cli backend is spelled as the empty string throughout, so name it
 # rather than leaving every call site to infer it from "not claude".
 ACP_BACKEND_KIRO = ""
@@ -333,6 +351,7 @@ ACP_BACKENDS_KNOWN: FrozenSet[str] = frozenset(
         ACP_BACKEND_PI,
         ACP_BACKEND_GOOSE,
         ACP_BACKEND_DEEPSEEK,
+        ACP_BACKEND_MUSE,
     }
 )
 
@@ -478,6 +497,9 @@ POLICY_ID_BY_BACKEND: dict = {
     ACP_BACKEND_PI: ACP_BACKEND_PI,
     ACP_BACKEND_GOOSE: ACP_BACKEND_GOOSE,
     ACP_BACKEND_DEEPSEEK: ACP_BACKEND_DEEPSEEK,
+    # A dormant harness still needs a policy spelling: a governance rule must be able
+    # to name -- and so to deny -- any id this build can spell, selectable or not.
+    ACP_BACKEND_MUSE: ACP_BACKEND_MUSE,
 }
 
 #: The backend a deployment policy may never deny.

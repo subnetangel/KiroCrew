@@ -26,6 +26,7 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
 )
@@ -482,6 +483,11 @@ _MODEL_REGISTRY_NAMESPACE_BY_BACKEND: dict = {
     # other harness spells, so a shared bucket would offer the picker ids that only
     # one backend can accept.
     ACP_BACKEND_DEEPSEEK: "deepseek",
+    # Muse gets its own key for the reason codex and the rest do: its MSP ``model/list``
+    # ids are Muse's own vocabulary (and a NON-contributor row must be pinnable), so a
+    # shared ``acp`` bucket would let a Muse session overwrite the catalog the picker
+    # offers for a kiro-family harness.
+    ACP_BACKEND_MUSE: "muse",
 }
 
 
