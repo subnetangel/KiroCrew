@@ -73,6 +73,8 @@ _CLAUDE_ACP_ARGV = ["/opt/bin/node", "/opt/lib/claude-agent-acp/index.js"]
 _CODEX_ACP_ARGV = ["/opt/bin/node", "/opt/lib/codex-acp/index.js"]
 _PI_ACP_ARGV = ["/opt/bin/node", "/opt/lib/pi-acp/index.js"]
 _PI_BIN = "/opt/bin/pi"
+_MUSE_ACP_ARGV = ["/opt/bin/node", "/opt/lib/muse-code-acp/index.js"]
+_MUSE_HOST_BIN = "/opt/bin/muse"
 _PI_LAUNCHER = "/opt/run/pi-launcher.sh"
 _PI_EXTENSION = "/opt/run/kiro_crew_tool_gate.ts"
 _PI_MCP_HANDOFF = "/opt/run/kirocrew_pi_gate_mcp_handoff.json"
@@ -647,6 +649,16 @@ def _capture_runtime_served(
             ),
             patch.object(
                 client_mod, "_resolve_codex_acp_bin", return_value=(_CODEX_ACP_ARGV, _SEARCH_PATH)
+            ),
+            patch.object(
+                client_mod,
+                "_resolve_muse_code_acp_bin",
+                return_value=(_MUSE_ACP_ARGV, _SEARCH_PATH),
+            ),
+            patch.object(
+                client_mod,
+                "_resolve_muse_host_bin",
+                return_value=(_MUSE_HOST_BIN, _SEARCH_PATH),
             ),
             patch.object(
                 codex_harness_mod, "resolve_spawn_masks", new=AsyncMock(return_value=((), ()))

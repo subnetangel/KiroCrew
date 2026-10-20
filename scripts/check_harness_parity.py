@@ -441,7 +441,6 @@ X_CAPTURE_ALLOWLIST: dict[tuple[str, str], str] = {
 KIRO_KAS_PAIR_ALLOWLIST: frozenset[str] = frozenset(
     {
         "ACP_BACKENDS_HARNESS_MANAGED_COMPACTION",
-        "ACP_BACKENDS_HOOKS_LIST",
         "ACP_BACKENDS_POD_HOME_REMAP",
     }
 )

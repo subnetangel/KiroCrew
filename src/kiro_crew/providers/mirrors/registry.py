@@ -36,6 +36,7 @@ from kiro_crew.acp_backends import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
 )
@@ -376,6 +377,29 @@ PROJECTIONS: dict[str, McpProjection] = {
         # No per-call deny path is verified for this harness, so a narrowed server is
         # withheld whole, the direction that cannot leave a switched-off tool reachable.
         per_tool_deny=PerToolDeny.WHOLE_SERVER,
+    ),
+    ACP_BACKEND_MUSE: McpProjection(
+        kind=ProjectionKind.NO_CHANNEL,
+        reason=(
+            "Muse is dormant (Routing.UNVERIFIED), and its MCP channel is unproven for "
+            "the same reason its routing is. MSP's initialize can grant a sessionMcp "
+            "capability, and the ACP adapter would carry Crew's servers in the "
+            "session/new array like codex -- but whether this host's muse serve (1.4.11) "
+            "GRANTS sessionMcp and actually mounts a stdio server passed in that array "
+            "has not been driven (Track A holds the live captures). Declaring a channel "
+            "on the MSP schema alone would be the exact codex/opencode mistake this "
+            "folder's README narrates: a channel claimed on an advertisement rather than "
+            "a round trip. So this is no-channel, named rather than implied, until a "
+            "measured mount earns the mirror. It is also not selectable "
+            "(NOT_SHIPPED_SELECTABLE), so no session holds this gap yet."
+        ),
+        channel=(
+            "the session/new mcpServers array, once a live round trip proves the 1.4.11 "
+            "muse serve host grants sessionMcp and mounts a stdio element passed in it "
+            "-- at which point Muse joins ACP_BACKENDS_SESSION_MCP_ARRAY and gets a "
+            "muse.py mirror, codex-shaped"
+        ),
+        tracking="docs/request-for-change/rfc-agent-config-mirror.md#5-migration",
     ),
 }
 

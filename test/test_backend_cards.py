@@ -366,6 +366,11 @@ def test_core_counts_per_harness_are_pinned() -> None:
         "goose": 7,
         "kas": 7,
         "kiro": 6,
+        # Muse lands dormant, so no core capability is AVAILABLE yet: its routing is
+        # unverified and every user-facing line (session control, tools, read-only
+        # side chat, ...) is gated on the verification Track A still owes. The count
+        # climbs as those flip; 0 is the honest dormant reading.
+        "muse": 0,
         "opencode": 6,
         "pi": 5,
     }

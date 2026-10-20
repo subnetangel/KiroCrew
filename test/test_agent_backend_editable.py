@@ -22,6 +22,7 @@ from kiro_crew.acp_backends import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
 )
@@ -35,14 +36,26 @@ FIELD = "agent.acp_backend"
 #: Known ids the public baseline deliberately does not offer, each entry carrying its
 #: reason in ``test_baseline_ships_every_known_backend``. An entry is a reasoned
 #: exclusion rather than a defect, and it earns its place by naming what the id fails.
-#: Empty today: no id is excluded. ``deepseek`` was the one member while it failed the
+#: ``deepseek`` was the one member while it failed the
 #: ROUTING half of the selectability bar -- its sandbox decides its own tool calls and
 #: its ``session/request_permission`` carries only a model-initiated escalation, so
 #: Crew's PreToolUse gate never ran for what a session did. It left the set when Crew
 #: composed its own gate plugin into the harness and read the plugin's load marker
 #: back before the first prompt (``Routing.VERIFIED_GATE_EXTENSION``), which is the
 #: routing half met the way the exclusion said it had to be.
-NOT_SHIPPED_SELECTABLE: frozenset = frozenset()
+#:
+#: ``muse`` (Muse Code) is the member today, and it fails the SAME half for the
+#: opposite reason: not that its routing cannot gate, but that its gate is not yet
+#: PROVEN. MSP's ``ApprovalMode`` is a closed enum and the ``Session`` reads the
+#: effective mode back, so the ``VERIFIED_SEEDED_SETTINGS`` seam EXISTS -- but whether
+#: Crew can seed ``promptUnmatched`` at ``session/start`` and read it back before the
+#: first prompt on this host's Muse 1.4.11 has not been driven (Track A holds the live
+#: captures). Its routing is therefore ``Routing.UNVERIFIED``, which
+#: ``register_selectable_backend`` refuses, so it is dormant: KNOWN, fully carded,
+#: with auth and an install probe, but not selectable. It leaves this set the moment
+#: Track A proves the seed/read-back and its routing becomes
+#: ``VERIFIED_SEEDED_SETTINGS`` -- a one-line flip, the same shape goose already uses.
+NOT_SHIPPED_SELECTABLE: frozenset = frozenset({ACP_BACKEND_MUSE})
 
 
 @pytest.fixture
