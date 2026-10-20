@@ -25,6 +25,7 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
 )
@@ -62,6 +63,14 @@ from kiro_crew.agent_sdk.backends import (
 # tool executors from inside the same process -- it is not an OS sandbox that Crew's
 # seatbelt would nest inside, and it does not carry Crew's credential mask. Skipping
 # Crew's layer for it would drop the compensating control for its passive reads.
+#
+# muse is excluded on the codex rule: it is a Node adapter (``@bex-co/muse-code-acp``),
+# so Crew's own layer is the only OS confinement a Muse session gets. Muse's own OS
+# sandbox is the HOST process's in-process policy, not a layer Crew's seatbelt could
+# nest inside, and membership here fails OPEN -- claiming it for a harness with no
+# nestable sandbox would leave the agent process unconfined. (Separately, Muse is not
+# enforced while its routing is ``UNVERIFIED``, so no credential mask is applied to it
+# regardless.)
 ACP_BACKENDS_INTERNAL_SANDBOX = frozenset({ACP_BACKEND_KIRO})
 
 # Backends whose pod-spawned child has its ambient ``HOME`` relocated onto the
@@ -94,6 +103,11 @@ ACP_BACKENDS_INTERNAL_SANDBOX = frozenset({ACP_BACKEND_KIRO})
 # deepseek is excluded on the same grounds: its whole home is ``DSH_HOME``, which its
 # auth declaration names, so the floor re-anchors the declared leaf under the
 # override and a ``$HOME`` relocation reaches nothing the override does not.
+#
+# muse is excluded for the same reason with a different variable: its credential home
+# follows ``XDG_CONFIG_HOME`` (``muse/auth.json`` under it), which its auth
+# declaration names, so a ``$HOME`` relocation reaches nothing the override does not.
+# It is also a Node adapter whose child credentials do not hang off ``$HOME`` at all.
 ACP_BACKENDS_POD_HOME_REMAP = frozenset({ACP_BACKEND_KIRO})
 
 
@@ -225,6 +239,10 @@ ACP_BACKEND_PROCESS_NAMES: Mapping[str, str] = {
     ACP_BACKEND_CLAUDE: "claude-agent-acp",
     ACP_BACKEND_CODEX: "codex-acp",
     ACP_BACKEND_PI: "pi-acp",
+    # Muse is reached through a Node adapter whose bin is ``muse-code-acp``; the HOST
+    # it spawns (``muse``) is resolved separately on the plain-binary ladder, so the
+    # reclaim marker is the adapter's basename like the other Node adapters.
+    ACP_BACKEND_MUSE: "muse-code-acp",
     **{backend: record.binary for backend, record in sorted(ACP_BACKEND_LAUNCH.items())},
 }
 
@@ -249,6 +267,9 @@ ACP_BACKEND_NODE_ADAPTER_PACKAGES: Mapping[str, str] = {
     ACP_BACKEND_CLAUDE: "@agentclientprotocol/claude-agent-acp",
     ACP_BACKEND_CODEX: "@agentclientprotocol/codex-acp",
     ACP_BACKEND_PI: "pi-acp",
+    # Muse's adapter is a scoped npm package; JP may later re-scope it, which is why
+    # it is one constant read everywhere rather than spelled at each site.
+    ACP_BACKEND_MUSE: "@bex-co/muse-code-acp",
 }
 
 #: The entry script inside such a package, as every resolver builds it.

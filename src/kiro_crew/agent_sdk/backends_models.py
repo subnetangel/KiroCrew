@@ -55,6 +55,12 @@ logger = logging.getLogger("kiro_crew.agent_sdk.backends")
 # ``[provider, model]`` pair -- ``["deepseek-official", "deepseek-v4-flash"]`` -- so
 # the value is passed through exactly as advertised rather than parsed. That is what
 # ``ACP_BACKENDS_ADVERTISED_MODEL_SELECTION`` membership is for.
+#
+# ``ACP_BACKEND_MUSE`` is NOT a member: MSP switches the model with a dedicated
+# ``session/setModel`` verb and lists models via ``model/list``, and whether the ACP
+# adapter re-exposes that as a ``session/new`` ``model`` config option is a Track A
+# fact not yet captured. A dormant harness claims no config-option channel on an
+# unmeasured advertisement; it joins when the adapter's ``configOptions`` are driven.
 ACP_BACKENDS_MODEL_VIA_CONFIG_OPTION = frozenset(
     {
         ACP_BACKEND_CLAUDE,
@@ -360,6 +366,12 @@ def effort_config_option_value(backend: str, level: str) -> str:
 # values are JSON-encoded ``[provider, model]`` pairs drawn from the harness's live
 # service catalog. Nothing can spell one of those from a stored bare model name, so
 # a pick that did not come from the capture is a pick the session refuses.
+#
+# ``ACP_BACKEND_MUSE`` is NOT a member yet, for the same reason it is out of the model
+# config-option set: whether the ACP adapter advertises Muse's ``model/list`` ids as a
+# ``session/new`` select is an unmeasured Track A fact, and this membership's whole
+# value -- capturing that advertised list into the ``muse`` namespace -- has nothing
+# to capture until that select is observed. It joins with the model channel.
 ACP_BACKENDS_ADVERTISED_MODEL_SELECTION = frozenset(
     {
         ACP_BACKEND_CLAUDE,

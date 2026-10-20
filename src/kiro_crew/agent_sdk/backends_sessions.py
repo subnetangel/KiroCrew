@@ -21,6 +21,7 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
 )
@@ -91,6 +92,15 @@ from kiro_crew.agent_sdk.backends import (
 # demux Crew has -- see ``ACP_BACKENDS_ACP_RUNTIME`` -- so Crew opens one process per
 # session and there is no shared session to persist. A harness capability Crew cannot
 # reach is recorded here rather than claimed.
+#
+# muse is not a member, and the reason is MEASUREMENT not architecture. Like codex the
+# adapter multiplexes sessions over one ``muse serve``, so membership is possible --
+# but it rests on a measured fact codex's does: that after the teardown verb Crew
+# sends, a ``session/resume`` (MSP serves ``session/resume``) still restores the
+# thread. That has not been driven on this host (Track A, running in parallel, holds
+# the live captures), and this harness is dormant with ``Routing.UNVERIFIED``, so the
+# conservative answer is OUT until a resume-after-close capture earns it -- at which
+# point this is one entry, not a redesign.
 ACP_BACKENDS_SESSION_SHARING = frozenset({ACP_BACKEND_KIRO, ACP_BACKEND_CODEX})
 
 # Backends served by AcpRuntime + AcpSessionHandle — the kiro-agent family
@@ -137,7 +147,20 @@ ACP_BACKENDS_SESSION_SHARING = frozenset({ACP_BACKEND_KIRO, ACP_BACKEND_CODEX})
 # cli.json overlay and takes effort through ``session/set_config_option``. That
 # is why membership here is a statement about the TRANSPORT and nothing else --
 # every kiro-family convention is its own set, and codex is absent from each.
-ACP_BACKENDS_ACP_RUNTIME = frozenset({ACP_BACKEND_KIRO, ACP_BACKEND_KAS, ACP_BACKEND_CODEX})
+#
+# ``ACP_BACKEND_MUSE`` IS a member, on the same transport claim and the same
+# non-kiro shape as codex: the ``@bex-co/muse-code-acp`` adapter keeps a session map
+# and multiplexes N ACP sessions over one ``muse serve`` child, exactly the design
+# that makes AcpRuntime the right driver. Membership here is the TRANSPORT decision
+# alone and carries nothing else: Muse reads no cli.json overlay, is dormant, and is
+# absent from every kiro-family set and from session sharing/eviction until those are
+# measured. The table that REGISTERS the harness (``harness._HARNESSES``) is
+# deliberately reachable before this set names the id -- a harness is written and
+# tested before it is routed -- so Muse's harness is registered there in Stage 3 while
+# this membership is what makes a session actually take the runtime path.
+ACP_BACKENDS_ACP_RUNTIME = frozenset(
+    {ACP_BACKEND_KIRO, ACP_BACKEND_KAS, ACP_BACKEND_CODEX, ACP_BACKEND_MUSE}
+)
 
 # Backends ``AcpClient._spawn`` can construct a session for directly: kiro (the
 # resolve-and-exec branch a backend with no process adapter falls through to)
@@ -197,6 +220,11 @@ ACP_BACKENDS_ACP_CLIENT_SPAWNABLE = frozenset(
 # spelled as "not <some host>" would inherit an eviction guarantee it has never
 # demonstrated, and the operator who never opted into it is the one who finds the
 # adapter growing. Membership is earned by a measured teardown, not by default.
+#
+# muse is NOT a member: its teardown verb has not been driven to show the session
+# leaves the adapter's map (Track A holds the captures), and a dormant harness earns
+# no eviction guarantee on a schema reading. Until that measurement it is out, which
+# costs nothing while it is also out of ACP_BACKENDS_SESSION_SHARING.
 ACP_BACKENDS_SESSION_EVICTION = frozenset({ACP_BACKEND_KIRO, ACP_BACKEND_KAS, ACP_BACKEND_CODEX})
 
 # Backends whose process answers ``session/new``, ``session/load`` and
@@ -213,6 +241,8 @@ ACP_BACKENDS_SESSION_EVICTION = frozenset({ACP_BACKEND_KIRO, ACP_BACKEND_KAS, AC
 #
 # KAS and codex are NOT members: neither has been measured, so a start that
 # overlaps another on them is not claimed to have waited for it.
+# muse is NOT a member: unmeasured, so a start overlapping another on it is not
+# claimed to have queued behind it.
 ACP_BACKENDS_SERIAL_SESSION_STARTS = frozenset({ACP_BACKEND_KIRO})
 
 # Backends that keep their OWN session records and resolve a resume from the
@@ -232,6 +262,15 @@ ACP_BACKENDS_SERIAL_SESSION_STARTS = frozenset({ACP_BACKEND_KIRO})
 # from the id alone through its own session map, replaying the conversation as
 # ``user_message_chunk`` / ``agent_message_chunk`` updates before answering
 # (``test/fixtures/acp_frames/pi/session-load-live.jsonl``).
+#
+# muse is a member on its MSP SCHEMA rather than on a committed capture (Track A
+# holds the live captures). Muse persists sessions itself -- ``session/resume``,
+# ``session/fork``, ``session/list`` and ``session/read`` are in the 1.4.11 stable
+# schema and resolve from the ``commandId`` the host assigned -- so there is no
+# Crew-side transcript to pre-check and no ``_kiro.dev/session_file`` to send. The
+# ordinary dormant caveat applies: this says the harness OWNS its records, not that a
+# shared subagent may be continued (that is ``ACP_BACKENDS_SESSION_SHARING``, which
+# Muse is out of until a resume-after-close capture lands).
 ACP_BACKENDS_HARNESS_OWNED_SESSIONS = frozenset(
     {
         ACP_BACKEND_CLAUDE,
@@ -240,6 +279,7 @@ ACP_BACKENDS_HARNESS_OWNED_SESSIONS = frozenset(
         ACP_BACKEND_PI,
         ACP_BACKEND_GOOSE,
         ACP_BACKEND_DEEPSEEK,
+        ACP_BACKEND_MUSE,
     }
 )
 
@@ -262,6 +302,9 @@ ACP_BACKENDS_HARNESS_OWNED_SESSIONS = frozenset(
 # rejects modes across its whole surface, so it can never return one. Membership is
 # what keeps a restored conversation from being discarded by a check for a block this
 # harness has nothing to put in.
+# muse is NOT a member: the MSP ``Session`` object carries an effective approval-mode
+# block (``approvalMode: EffectiveApprovalModeState``), so a restore response is
+# expected to report modes and the ordinary gate applies.
 ACP_BACKENDS_LOAD_WITHOUT_MODES = frozenset({ACP_BACKEND_OPENCODE, ACP_BACKEND_DEEPSEEK})
 
 # Backends that restore a session with ``session/resume`` instead of
@@ -298,6 +341,10 @@ ACP_BACKENDS_LOAD_WITHOUT_MODES = frozenset({ACP_BACKEND_OPENCODE, ACP_BACKEND_D
 # on the day, with no record of what Crew verified and no place to write down why. The
 # set is the record, and adding a harness to it is a deliberate edit with a capture
 # behind it (harness-parity H6, the same reason every capability here is opt-in).
+#
+# muse is NOT a member: the MSP schema serves ``session/resume`` AND a full
+# ``session/read`` of a restored conversation, and Crew restores it with the loading
+# verb, so it is not a resume-only harness.
 ACP_BACKENDS_RESUME_WITHOUT_LOAD = frozenset({ACP_BACKEND_DEEPSEEK})
 
 # Harnesses whose ``session/fork`` copies a stored session only up to a given
@@ -307,4 +354,7 @@ ACP_BACKENDS_RESUME_WITHOUT_LOAD = frozenset({ACP_BACKEND_DEEPSEEK})
 # rewind discards. claude-agent-acp reads the point from
 # ``_meta.jetbrains.air.fork.messageId`` (from 0.71.0; see
 # ``CLAUDE_ACP_FORK_POINT_MIN_VERSION``).
+# muse is NOT a member: MSP ``session/fork`` exists, but whether it honours a fork
+# POINT rather than copying the whole session is unmeasured, so advertising it is not
+# enough and the conservative answer is out.
 ACP_BACKENDS_FORK_AT_MESSAGE = frozenset({ACP_BACKEND_CLAUDE})

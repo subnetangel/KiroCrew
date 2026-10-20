@@ -37,6 +37,9 @@ from kiro_crew.agent_sdk.backends import (
 # (``test/fixtures/acp_frames/claude/saved-spec-projection-live.jsonl``): the
 # server the mirror projected out of a saved spec ran in the session. Codex and
 # DeepSeek rest on unit tests only.
+# muse is NOT a member: a projected spec would need the session MCP array channel it
+# does not yet have (its projection is ``no-channel``), and nothing confirms a
+# consumed projection against saved intent on an unverified, dormant harness.
 ACP_BACKENDS_MEMBER_CAPABILITIES = frozenset(
     {
         ACP_BACKEND_KIRO,
@@ -258,6 +261,12 @@ ACP_BACKENDS_MEMBER_DISPATCH = frozenset(
         ACP_BACKEND_PI,
     }
 )
+# muse is NOT a member, and it fails BOTH preconditions this set is argued on: it has
+# no per-session mount channel (its MCP projection is ``no-channel`` -- the
+# ``session/new`` array is not yet proven to mount Crew's servers on 1.4.11), and its
+# session is not GATED (``Routing.UNVERIFIED`` is outside ``tool_gate.ENFORCED_ROUTINGS``
+# and it owns no settings file Crew writes). A member DM thread needs both; Muse has
+# neither until Track A lands, so it stays a plain chat rather than mounted-and-refused.
 
 # Backends a crew member's OWN WEBVIEW may be mounted into (``kirocrew-panel``:
 # ``panel_publish``, ``panel_templates``).
@@ -310,3 +319,8 @@ ACP_BACKENDS_MEMBER_PANEL = frozenset(
         ACP_BACKEND_DEEPSEEK,
     }
 )
+# muse is NOT a member: it is out of ``ACP_BACKENDS_MEMBER_DISPATCH``, so
+# ``_member_session_key`` never issues it a member session key, and it fails the two
+# preconditions the panel shares with dispatch anyway -- a session array this core
+# composes to carry identity, and a gated-or-owned permission surface. Both arrive
+# with the routing verification that is still pending.

@@ -123,6 +123,15 @@ from kiro_crew.agent_sdk.backends import (
 # ``mcp-stdio-rollback-live.jsonl`` for what an unstartable element actually does.
 # It reads no ``~/.kiro/agents/<name>.json``, so this array is the only channel Crew
 # has to it.
+#
+# muse is NOT a member yet, and this is the brief's own gate rather than a refusal:
+# whether the 1.4.11 ``muse serve`` host grants ``sessionMcp`` at MSP ``initialize``
+# and actually mounts a stdio server passed in the ACP ``mcpServers`` array is the
+# live question Track A is driving. Absent that round-trip capture, declaring
+# membership would be the exact codex/opencode mistake this set's comments narrate --
+# claiming a channel on an advertisement. So Muse's MCP projection is ``no-channel``
+# (named in ``providers/mirrors/registry.py``) until Track A proves the mount, at
+# which point this is one entry here plus a mirror.
 ACP_BACKENDS_SESSION_MCP_ARRAY: FrozenSet[str] = frozenset(
     {
         ACP_BACKEND_CLAUDE,
@@ -295,6 +304,11 @@ ACP_BACKENDS_SPEC_SERVERS_OFF_WIRE = frozenset({ACP_BACKEND_KIRO, ACP_BACKEND_KA
 # pi is NOT a member: it has no mirror (``providers/mirrors/registry.py``'s
 # ``MIRRORS``), so nothing computes ``zero_tools`` for it and ``AcpClient`` never
 # refuses on its sessions.
+#
+# muse is NOT a member on three independent grounds, any one sufficient: its routing
+# is ``Routing.UNVERIFIED`` (outside ``tool_gate.ENFORCED_ROUTINGS``), it has no
+# mirror that computes ``zero_tools`` (its projection is ``no-channel``), and it is
+# served by ``AcpRuntime`` rather than ``AcpClient`` where ``_deny_zero_tools`` lives.
 ACP_BACKENDS_HONOR_ZERO_TOOL_BAN = frozenset(
     {
         ACP_BACKEND_KIRO,

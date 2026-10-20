@@ -365,6 +365,7 @@ def test_known_membership_is_unchanged_by_the_move() -> None:
         "deepseek",
         "goose",
         "kas",
+        "muse",
         "opencode",
         "pi",
     ]
@@ -381,6 +382,9 @@ EXPECTED_CAPABILITIES = {
     "kas": (PROVIDER_ACP, MODEL_NAMESPACE_ACP, False, True, False, False),
     "claude": (PROVIDER_CLAUDE_CODE, "claude_code", True, True, True, True),
     "codex": (PROVIDER_ACP, "codex", True, True, True, False),
+    # Muse lands dormant: its own namespace, and every graded capability False until
+    # Track A verifies the routing and the advertised selects that would flip them.
+    "muse": (PROVIDER_ACP, "muse", False, False, False, False),
     "nope": (PROVIDER_ACP, MODEL_NAMESPACE_ACP, False, False, False, False),
 }
 

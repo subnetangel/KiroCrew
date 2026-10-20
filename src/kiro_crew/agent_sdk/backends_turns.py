@@ -66,6 +66,9 @@ from kiro_crew.agent_sdk.backends import (
 # can take a USER's mid-turn message but not a deny notice belongs in
 # ``ACP_BACKENDS_STEERING_REQUEST`` below instead, and the two questions are read
 # off separate properties (``supports_steer`` and ``supports_refusal_steer``).
+# muse is not a member: MSP has ``turn/steer`` (and ``turn/interrupt``), but neither
+# its steer contract nor a deny-notice capability is captured, and a dormant harness
+# claims neither steering set until driven.
 ACP_BACKENDS_STEER = frozenset({ACP_BACKEND_KIRO, ACP_BACKEND_KAS})
 
 # Backends that take a USER's mid-turn message over a REQUEST whose answer is
@@ -280,6 +283,12 @@ ACP_BACKENDS_STEER_CONCURRENT_PROMPT = frozenset({ACP_BACKEND_OPENCODE})
 # deepseek is the one non-member:
 # :data:`ACP_BACKENDS_CONTEXT_RECYCLE` carries the consequence, because deepseek
 # reports no compaction at all, so a decline leaves its context unbounded.
+# muse is also a non-member: MSP has a ``session/compact`` verb, but its turn shape is
+# unobserved, so a dormant harness is not handed ``/compact`` on an unmeasured
+# capability. Like deepseek, the consequence is carried by
+# :data:`ACP_BACKENDS_CONTEXT_RECYCLE` -- which Muse is ALSO out of, so it declines at
+# the threshold and is logged at WARNING rather than silently leaking or being
+# recycled, the honest dormant answer until its compaction is driven.
 ACP_BACKENDS_COMPACT = frozenset(
     {
         ACP_BACKEND_KIRO,
@@ -371,6 +380,11 @@ ACP_BACKENDS_HARNESS_MANAGED_COMPACTION = frozenset({ACP_BACKEND_KAS})
 # in its own words (:func:`compact_unsupported_reply` has a third sentence for
 # exactly this case), and the gate logs a WARNING naming the gap, so the condition
 # is reported rather than silent while somebody decides which set it belongs in.
+# muse is NOT a member, and it is exactly the "none of the three" case this paragraph
+# describes: it reports no compaction Crew can see and is not handed ``/compact``, so
+# it declines and is logged at WARNING rather than being granted this
+# conversation-ending arm by exclusion. It leaves this set the moment its compaction
+# is driven into one of the three.
 ACP_BACKENDS_CONTEXT_RECYCLE = frozenset({ACP_BACKEND_DEEPSEEK})
 
 # Backends that finish a manual ``/compact`` INSIDE the ``session/prompt`` turn,
@@ -482,6 +496,9 @@ ACP_BACKENDS_NATIVE_TODOS = frozenset({ACP_BACKEND_CLAUDE})
 # the prompt path. kiro is not a member: it runs ``/clear`` natively over
 # ``_kiro.dev/commands/execute``. claude is not a member: its harness owns its own
 # command set. A harness added later stays out until its ``/clear`` is checked.
+# muse stays out: whether its MSP command surface answers ``/clear`` itself is
+# unmeasured, so the conservative default (hand it to the harness as prompt text)
+# applies until checked.
 ACP_BACKENDS_LOCAL_CLEAR = frozenset(
     {
         ACP_BACKEND_KAS,

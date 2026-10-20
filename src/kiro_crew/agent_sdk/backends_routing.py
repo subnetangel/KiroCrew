@@ -28,6 +28,7 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
 )
@@ -130,6 +131,12 @@ from kiro_crew.agent_sdk.backends import (
 # rejected writes and commands left no file. The gate may approve only stock
 # dsh-owned ``read``, ``grep`` and ``glob`` calls with absolute targets. Unknown,
 # shadowed, MCP and command tools fail closed.
+#
+# muse is NOT a member: its routing is ``UNVERIFIED``, so nothing establishes that a
+# side-session tool call even reaches the host gate, let alone that a derived
+# read-only posture refuses a write. A side turn on it runs ``REJECT_ALL`` until its
+# routing is verified and a read-only posture is expressed in its own approval-mode
+# vocabulary.
 ACP_BACKENDS_SIDE_READONLY = frozenset(
     {ACP_BACKEND_KIRO, ACP_BACKEND_KAS, ACP_BACKEND_CLAUDE, ACP_BACKEND_GOOSE, ACP_BACKEND_DEEPSEEK}
 )
@@ -159,6 +166,8 @@ ACP_BACKENDS_SIDE_READONLY = frozenset(
 # The channel TABLE lives in ``kiro_crew.acp._dispatch`` (it holds wire field names, which
 # are driver detail); this set is the vocabulary half, and a test asserts the two agree so
 # a row and its membership cannot drift apart.
+# muse is NOT a member: its tool-call frame identity on MSP is not captured, and a
+# dormant harness opts into a fail-closed refusal only on a recorded corpus.
 ACP_BACKENDS_META_IDENTITY: FrozenSet[str] = frozenset({ACP_BACKEND_GOOSE})
 
 # Backends whose ``session/request_permission`` names no ``kind`` and whose
@@ -187,6 +196,8 @@ ACP_BACKENDS_META_IDENTITY: FrozenSet[str] = frozenset({ACP_BACKEND_GOOSE})
 # Membership decides whether ``AcpSessionHandle`` hands its ``tool_kind_cache``
 # (allocated for every backend) to ``_dispatch.build_permission_event``; a
 # non-member's parser receives none and the frame's own ``kind`` stands.
+# muse is NOT a member: unmeasured, and carrying a wrong kind onto a permission event
+# can only narrow or veto, so a dormant harness stays out.
 ACP_BACKENDS_PERMISSION_KIND_FROM_TOOL_CALL: FrozenSet[str] = frozenset({ACP_BACKEND_KAS})
 
 # Backends whose child may ask THIS host for an access token over the
@@ -213,6 +224,8 @@ ACP_BACKENDS_PERMISSION_KIND_FROM_TOOL_CALL: FrozenSet[str] = frozenset({ACP_BAC
 # ``initialize`` result advertises ``authMethods: []`` and its ``authenticate``
 # returns immediate success, so the ACP layer authenticates nothing at all and the
 # provider key it needs is resolved inside the harness from its own credential store.
+# muse is not a member: it authenticates from its own ``~/.config/muse/auth.json`` and
+# never asks Crew for a token (its entitlement source is ``own_credential_file``).
 ACP_BACKENDS_HOST_AUTH_CALLBACK = frozenset({ACP_BACKEND_KAS})
 
 #: Backends whose engine sends an MCP OAuth consent URL to its client as a
@@ -225,6 +238,9 @@ ACP_BACKENDS_HOST_AUTH_CALLBACK = frozenset({ACP_BACKEND_KAS})
 #: URL as ``_kiro.dev/mcp/oauth_request``.
 #: claude, codex, opencode, pi, goose and deepseek are not members: none of them
 #: defines either method.
+#: muse is not a member: it defines neither ``_kiro/openExternalUrl`` nor
+#: ``_kiro/mcp/resetServer`` -- those are a kiro-engine vocabulary, and Muse speaks
+#: MSP through a third-party adapter.
 ACP_BACKENDS_OPEN_EXTERNAL_URL = frozenset({ACP_BACKEND_KAS})
 
 #: Backends whose agent asks its CLIENT for the hooks matching a trigger, and to
@@ -238,6 +254,8 @@ ACP_BACKENDS_OPEN_EXTERNAL_URL = frozenset({ACP_BACKEND_KAS})
 #:
 #: Membership authorizes the ROUTE only. The handshake does not announce the
 #: channel (``KAS_CLIENT_CAPABILITIES``), so a member asks nothing yet.
+#: muse is not a member: the ``_kiro/hooks/*`` channel is a kiro-engine vocabulary,
+#: and Muse's MSP surface defines none of it.
 ACP_BACKENDS_HOOKS_LIST = frozenset({ACP_BACKEND_KAS})
 
 #: Backends whose session never runs the agent spec's own ``hooks``, so Crew's turn
@@ -257,6 +275,9 @@ ACP_BACKENDS_HOOKS_LIST = frozenset({ACP_BACKEND_KAS})
 #: through :mod:`kiro_crew.acp.harness_tool_names`. claude and codex are NOT: each
 #: approves some calls inside the harness without asking, so a PreToolUse hook
 #: would be skipped on exactly those calls until Crew makes them ask.
+#: muse is NOT a member: its routing is ``UNVERIFIED``, so Crew does not yet make it
+#: ask per tool call and there is no permission-request point for the turn loop to run
+#: a PreToolUse hook on.
 ACP_BACKENDS_CREW_FIRES_SPEC_HOOKS = frozenset(
     {ACP_BACKEND_KAS, ACP_BACKEND_GOOSE, ACP_BACKEND_OPENCODE}
 )
@@ -373,6 +394,23 @@ ACP_BACKEND_ROUTING: dict = {
     # extension Crew composes, which is this member, and the frame corpus carries the
     # live capture (``test/fixtures/acp_frames/deepseek/permission-request-live``).
     ACP_BACKEND_DEEPSEEK: Routing.VERIFIED_GATE_EXTENSION,
+    # muse is UNVERIFIED, and this is the honest state rather than a gap nobody
+    # filled. The mechanism it WILL use is clear: MSP ``ApprovalMode`` is a closed
+    # enum (``allowAll | promptUnmatched | onRequest | denyUnmatched``), Crew would
+    # seed ``promptUnmatched`` at ``session/start`` (via ``approvalMode``), and the
+    # ``Session`` object carries ``approvalMode: EffectiveApprovalModeState`` to read
+    # back before the first prompt -- the exact shape of
+    # ``VERIFIED_SEEDED_SETTINGS``, goose's mechanism. What is missing is the
+    # OBSERVATION: Track A runs in parallel and the seed + read-back has not been
+    # driven on this host's Muse 1.4.11 (adapter at 487fa6c pins the 1.4.8 SDK, a
+    # different schema fingerprint). ``UNVERIFIED`` always resolves INDETERMINATE,
+    # which refuses -- and it is the member that keeps ``register_selectable_backend``
+    # from shipping this harness selectable before the gate is real. The moment Track
+    # A proves the seed takes and reads back, this becomes
+    # ``Routing.VERIFIED_SEEDED_SETTINGS`` with a ``("approvalMode", "promptUnmatched")``
+    # row in ``ACP_BACKEND_PERMISSION_SETTING`` below -- a one-line flip, not a new
+    # mechanism, because the mechanism already exists for goose.
+    ACP_BACKEND_MUSE: Routing.UNVERIFIED,
 }
 
 
