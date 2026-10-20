@@ -889,3 +889,58 @@ per-backend facts every harness has supplied — its spawn plan, its spawn label
 its stderr label — now one adapter file (`acp/harness/<name>.py`) and one registry
 row (`process_adapter_for`) rather than three sites in `acp/client.py`. Those are the
 only recurring edit points left that a membership set does not already absorb.
+
+
+## Worked example: Muse Code
+
+The run to read for what a DORMANT landing looks like when every mechanical stage is
+done and the one thing missing is a live measurement. Muse Code (Meta's terminal
+agent, reached through the `@bex-co/muse-code-acp` Node adapter in front of
+`muse serve`) is codex-shaped — one adapter multiplexes N sessions over one host, so
+it is an `AcpRuntime` `HarnessAdapter` — but it is in `ACP_BACKENDS_KNOWN` and NOT in
+`BASELINE_SELECTABLE_BACKENDS`: it is named in `NOT_SHIPPED_SELECTABLE` with its
+reason, because its routing is `Routing.UNVERIFIED` until a live seam is proven.
+
+| Stage | State |
+|---|---|
+| 1 vocabulary | Done — `ACP_BACKEND_MUSE = "muse"`, in `ACP_BACKENDS_KNOWN`, `PROVIDER_LABEL_MUSE = "Muse Code"`, policy name mapped, its own `muse` model-registry namespace. Deliberately NOT in `BASELINE_SELECTABLE_BACKENDS` or the first-run independent-setup set. |
+| 2 capability sets | Decided for every set. IN `ACP_BACKENDS_ACP_RUNTIME` (the adapter multiplexes like codex) and `ACP_BACKENDS_HARNESS_OWNED_SESSIONS` (MSP persists sessions and resolves a load/resume from the host-assigned id). OUT of every measured set — session sharing, eviction, the session MCP array, the model/effort/advertised channels, every member-capability set, side read-only, both compaction sets (and context recycle — so it declines at the threshold and is logged, not recycled), and every kiro-family and routing-callback set. Each exclusion cites the reason, and the recurring one is that Track A holds the captures that would earn membership. |
+| 3 spawn path | Done — `acp/harness/muse.py`, a `CodexHarness`-shaped `MuseHarness` registered in `_HARNESSES`. TWO components (pi shape): the `muse-code-acp` adapter on the Node-entry ladder (`MUSE_CODE_ACP_BIN` override) and the `muse` host on the plain-binary ladder (`MUSE_CODE_EXECUTABLE` override, forwarded to the child), with a not-found message per half. No credential mask is resolved, because the harness is unenforced while dormant. |
+| 4 handshake | Done — `PROTOCOL_VERSION_MUSE`, its own literal, integer `1` (ACP v1). |
+| 5 auth declaration | Done — `own_credential_file`, `~/.config/muse/auth.json` on the floor with `XDG_CONFIG_HOME` re-anchored so the leaf keeps its two trailing segments under the override root (the two-segment shape goose has). `adapter_own_leaves` is empty, like claude's, because the harness is outside `tool_gate.ENFORCED_ROUTINGS` while unverified, so no mask is applied for a carve-out to spare a leaf from. Flips to naming that leaf when the routing is verified. |
+| 6 install probe | Done — `_probe_muse` names whichever of `muse-code-acp` and `muse` is absent. The adapter half's remedy is `npm i -g @bex-co/muse-code-acp`; the host half's is Meta's own installer, printed as text and never executed. |
+| 7 selectability | **Dormant**, named in `NOT_SHIPPED_SELECTABLE`. Its MCP projection is `no-channel` (`providers/mirrors/registry.py`), naming the `session/new` array as the channel it would use and a tracking anchor, because mounting Crew's servers on Muse 1.4.11 is not yet a measured round trip. |
+| routing | `UNVERIFIED`, which resolves INDETERMINATE and refuses, and which `register_selectable_backend` rejects. The mechanism it WILL use is `VERIFIED_SEEDED_SETTINGS`, goose's: MSP's `ApprovalMode` is a closed enum (`allowAll | promptUnmatched | onRequest | denyUnmatched`) and the `Session` object carries `approvalMode: EffectiveApprovalModeState`, so Crew would seed `promptUnmatched` at `session/start` and read the effective mode back before the first prompt. |
+| 8 live spill | Not reached. |
+
+**Exactly what Track A must supply to flip each PARTIAL/dormant item, and what each flips:**
+
+1. **A handshake capture** against Muse 1.4.11 confirming the adapter answers
+   `protocolVersion: 1` — confirms Stage 4's literal (no change expected; a different
+   revision is the one line in `acp/harness/muse.py` that would move).
+2. **An approval-mode seed + read-back capture**: a `session/start` with
+   `approvalMode: promptUnmatched` whose returned `Session.approvalMode` reads it back
+   as `promptUnmatched` before the first prompt, and a `session/request_permission`
+   frame reaching the client for an unmatched tool call with a denial that stops the
+   command. This flips the routing from `Routing.UNVERIFIED` to
+   `Routing.VERIFIED_SEEDED_SETTINGS` with an `("approvalMode", "promptUnmatched")` row
+   in `ACP_BACKEND_PERMISSION_SETTING`, removes the `NOT_SHIPPED_SELECTABLE` entry, adds
+   Muse to `BASELINE_SELECTABLE_BACKENDS`, turns on enforcement (so
+   `resolve_spawn` resolves the credential mask and `adapter_own_leaves` becomes
+   `(".config/muse/auth.json",)`), and makes the enforced-host contract tests arm for
+   Muse rather than taking the dormant branch.
+3. **A `sessionMcp` mount round trip** on 1.4.11: pass a stdio MCP server in the ACP
+   `mcpServers` array and show the tool listed and callable. This flips the MCP
+   projection from `no-channel` to a `muse.py` mirror and adds Muse to
+   `ACP_BACKENDS_SESSION_MCP_ARRAY`, which in turn makes the member-dispatch/panel and
+   zero-tool-ban memberships reachable.
+4. **A teardown/resume-after-close capture**: show `session/close` evicts the session
+   and `session/resume` then restores the thread. This earns
+   `ACP_BACKENDS_SESSION_EVICTION` and `ACP_BACKENDS_SESSION_SHARING`.
+5. **Muse's own signed-out error text** on 1.4.11, to fill
+   `signed_out_signature` in the auth declaration (left empty rather than guessed).
+
+The lesson this run carries: dormant is a NAMED stage, not an incomplete one. Every
+gap above has an address — a set, a routing row, a projection kind, a declaration
+field — so the day Track A lands its captures, flipping Muse to selectable is a
+bounded edit at each of those addresses rather than a re-litigation of the design.
