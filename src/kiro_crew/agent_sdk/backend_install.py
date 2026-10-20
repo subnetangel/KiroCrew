@@ -49,6 +49,7 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_CODEX,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_PI,
     ACP_BACKEND_PROCESS_NAMES,
     ACP_BACKENDS_KNOWN,
@@ -109,6 +110,13 @@ COMPONENT_CODEX_ACP_ADAPTER = ACP_BACKEND_PROCESS_NAMES[ACP_BACKEND_CODEX]
 #: ``pi`` agent that adapter spawns in turn. Either can be absent on its own.
 COMPONENT_PI_ACP_ADAPTER = ACP_BACKEND_PROCESS_NAMES[ACP_BACKEND_PI]
 COMPONENT_PI_CLI = "pi"
+
+#: The Muse backend's TWO components: the ``muse-code-acp`` adapter Crew spawns, and
+#: the ``muse`` host it drives (``muse serve``). Either can be absent on its own, and
+#: unlike pi they have DIFFERENT remedies -- the adapter is one npm install, the host
+#: is Meta's own installer, which the probe prints as text rather than executing.
+COMPONENT_MUSE_ACP_ADAPTER = ACP_BACKEND_PROCESS_NAMES[ACP_BACKEND_MUSE]
+COMPONENT_MUSE_HOST = "muse"
 
 #: How long a verdict is reused. The Claude driver shells out to mise and globs
 #: the filesystem, and the dashboard polls this endpoint, so an uncached probe
@@ -415,6 +423,54 @@ def _probe_pi() -> BackendInstallState:
     )
 
 
+def _probe_muse() -> BackendInstallState:
+    """The Muse backend needs BOTH components, and names the absent one.
+
+    The pi probe's shape, because the harness has the same split: the
+    ``muse-code-acp`` adapter is what Crew spawns and ``muse`` is the host it drives,
+    and having one without the other is a distinguishable half-install. Unlike pi the
+    two have DIFFERENT remedies -- ``npm i -g @bex-co/muse-code-acp`` for the adapter,
+    and Meta's own installer for the host -- so the install command is suggested only
+    when the ADAPTER is missing; the host half reports ``""`` rather than an npm
+    command that would not install it, and the sign-in/host remedy is the Stage 5 auth
+    declaration's remedy the dashboard renders verbatim.
+
+    ``restart_required`` reads the spawn path's own caches for the same reason the
+    other probes do: both components resolve once per process and never invalidate, so
+    a fresh "installed" can disagree with what the next spawn does.
+    """
+    adapter_present, host_present = acp_driver.muse_components_resolve()
+
+    missing: List[str] = []
+    if not adapter_present:
+        missing.append(COMPONENT_MUSE_ACP_ADAPTER)
+    if not host_present:
+        missing.append(COMPONENT_MUSE_HOST)
+
+    policy_id = _policy_id(ACP_BACKEND_MUSE)
+    if not missing:
+        return BackendInstallState(
+            ACP_BACKEND_MUSE,
+            policy_id,
+            INSTALLED,
+            restart_required=acp_driver.muse_cached_negative(),
+        )
+    # The npm command installs the adapter alone; it is suggested only when the
+    # adapter is the missing half, mirroring the claude probe's asymmetry.
+    command = (
+        acp_driver.muse_adapter_install_command()
+        if COMPONENT_MUSE_ACP_ADAPTER in missing
+        else ""
+    )
+    return BackendInstallState(
+        ACP_BACKEND_MUSE,
+        policy_id,
+        MISSING,
+        tuple(missing),
+        command,
+    )
+
+
 #: Backend id -> its probe. A probe that answers by calling :func:`probe_backend`
 #: for ANOTHER backend must also be named in :func:`forget_probe`, in BOTH
 #: directions: its own entry is a copy, so evicting the copy alone rebuilds it from
@@ -427,6 +483,7 @@ _PROBES: Dict[str, Callable[[], BackendInstallState]] = {
     ACP_BACKEND_CLAUDE: _probe_claude,
     ACP_BACKEND_CODEX: _probe_codex,
     ACP_BACKEND_PI: _probe_pi,
+    ACP_BACKEND_MUSE: _probe_muse,
     # Every harness that serves ACP from its own binary is probed by the one function
     # above, bound to its id. Generated from the membership rather than listed, so
     # onboarding a harness of that shape adds no row here at all -- and a harness with
@@ -604,6 +661,8 @@ __all__ = [
     "COMPONENT_KAS_BUNDLE",
     "COMPONENT_KAS_ENGINE",
     "COMPONENT_KIRO_CLI",
+    "COMPONENT_MUSE_ACP_ADAPTER",
+    "COMPONENT_MUSE_HOST",
     "INSTALLED",
     "KAS_BUNDLE_INSTALL_COMMAND",
     "MISSING",

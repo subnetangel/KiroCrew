@@ -68,6 +68,7 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
     ACP_BACKENDS_KNOWN,
@@ -738,6 +739,53 @@ AGENT_AUTH_DECLARATIONS: Tuple[AgentAuthDeclaration, ...] = (
         # ``session/prompt`` with -32603 ``... no API key for provider route
         # "deepseek-official"; store DEEPSEEK_API_KEY ...``.
         signed_out_signature="no API key for provider route",
+    ),
+    AgentAuthDeclaration(
+        backend=ACP_BACKEND_MUSE,
+        # Muse signs in with its own credential file. The brief establishes the leaf:
+        # ``~/.config/muse/auth.json`` exists (0600) on this host when signed in, and
+        # its contents must never be read, printed, copied or moved -- the floor fences
+        # the leaf so an agent's file tools cannot read it, which needs the PATH only,
+        # not the bytes.
+        credential_leaves=(".config/muse/auth.json",),
+        # ``XDG_CONFIG_HOME`` relocates Muse's whole config tree (``muse/`` under it),
+        # so it is the override the floor must re-anchor the leaf beneath. The SAME
+        # shape as goose, not codex: it replaces the ``.config`` PREFIX rather than the
+        # token's parent, so the relocated file keeps two segments.
+        home_override_env_vars=("XDG_CONFIG_HOME",),
+        override_relative_leaves=("muse/auth.json",),
+        # NOTHING excluded from the mask, because no mask is applied: this harness's
+        # routing is ``Routing.UNVERIFIED``, so it is outside
+        # ``tool_gate.ENFORCED_ROUTINGS`` and ``adapter_hidden_credential_dirs`` returns
+        # empty for it. Declaring an ``adapter_own_leaves`` exclusion would assert a
+        # carve-out from a control that never runs -- the exact reason claude's is
+        # empty. When Track A verifies the routing and the harness becomes enforced,
+        # this becomes ``(".config/muse/auth.json",)`` so the adapter's own child can
+        # still read its token through the mask; until then it must be ``()``.
+        adapter_own_leaves=(),
+        # Action only, no state: a model served locally needs no sign-in, and the
+        # adapter reads the file itself, so Crew checks neither. Prose, no backticks,
+        # an em dash -- the panel renders it as plain text.
+        sign_in_remedy=(
+            "Muse Code signs in on its own — run muse in your terminal and complete "
+            "its sign-in to reach a hosted model. XDG_CONFIG_HOME moves where its "
+            "~/.config/muse/auth.json lives. It is not checked here: the harness reads "
+            "it."
+        ),
+        signed_out_message=(
+            "Muse Code is not signed in. Run `muse` in your terminal and complete its "
+            "sign-in (XDG_CONFIG_HOME moves where `~/.config/muse/auth.json` lives), "
+            "then start a new chat."
+        ),
+        # Excluded deliberately: it signs in through its own credential file, so a
+        # ``kiro-cli logout`` says nothing about whether a running Muse session is
+        # still authenticated.
+        host_logout_retires_children=False,
+        entitlement_source=ENTITLEMENT_OWN_CREDENTIAL_FILE,
+        # No signed-out signature yet: Muse's own "not signed in" error text on 1.4.11
+        # has not been captured (Track A). A guessed phrase would risk turning a
+        # transient failure terminal, so it is left empty until a live capture lands,
+        # and the shared auth vocabulary reads its signed-out answers meanwhile.
     ),
 )
 

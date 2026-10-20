@@ -848,6 +848,7 @@ def forget_cached_resolution(backend: str) -> None:
     from kiro_crew.agent_sdk.backends import (
         ACP_BACKEND_CLAUDE,
         ACP_BACKEND_CODEX,
+        ACP_BACKEND_MUSE,
         ACP_BACKEND_PI,
     )
 
@@ -858,6 +859,9 @@ def forget_cached_resolution(backend: str) -> None:
         ACP_BACKEND_CLAUDE: ("_claude_acp_argv_cache",),
         ACP_BACKEND_CODEX: ("_codex_acp_argv_cache",),
         ACP_BACKEND_PI: ("_pi_acp_argv_cache", "_pi_bin_cache"),
+        # Muse has the same two-cache shape as pi: the adapter argv cache and the
+        # host-binary cache, both reset so the next spawn re-resolves both halves.
+        ACP_BACKEND_MUSE: ("_muse_code_acp_argv_cache", "_muse_host_bin_cache"),
     }.get(backend, ())
     for name in sentinel_globals:
         if hasattr(_client, name):
@@ -875,6 +879,59 @@ def pi_install_command() -> str:
     from kiro_crew.acp.client import PI_INSTALL_COMMAND
 
     return PI_INSTALL_COMMAND
+
+
+def muse_components_resolve() -> tuple[bool, bool]:
+    """``(adapter, muse_host)`` -- the Muse backend's two halves, separately.
+
+    ``_resolve_muse_code_acp_bin`` finds the adapter Crew spawns;
+    ``_resolve_muse_host_bin`` finds the ``muse`` host the adapter drives, which Crew
+    must ALSO resolve because it forwards the chosen binary to the adapter through
+    ``MUSE_CODE_EXECUTABLE``. Two answers rather than one conjunction, the pi shape:
+    the two halves are different half-installs with different remedies (one an npm
+    install, the other Meta's own installer).
+    """
+    from kiro_crew.acp.client import _resolve_muse_code_acp_bin, _resolve_muse_host_bin
+
+    adapter_argv, _searched = _resolve_muse_code_acp_bin()
+    host_bin, _searched_host = _resolve_muse_host_bin()
+    return bool(adapter_argv), bool(host_bin)
+
+
+def muse_cached_negative() -> bool:
+    """Has the RUNNING gateway already resolved either Muse component as absent?
+
+    Two caches, one answer: a cached miss on EITHER component means the next spawn
+    fails regardless of what a fresh probe finds. Consulted, never invalidated, for
+    the reason ``claude_adapter_cached_negative`` gives.
+    """
+    from kiro_crew.acp import client as _client
+
+    unresolved = getattr(_client, "_UNRESOLVED", object())
+    for name in ("_muse_code_acp_argv_cache", "_muse_host_bin_cache"):
+        cached = getattr(_client, name, None)
+        if cached is None or cached is unresolved:
+            continue
+        try:
+            found, _searched = cached  # type: ignore[misc]
+        except Exception:
+            continue
+        if not found:
+            return True
+    return False
+
+
+def muse_adapter_install_command() -> str:
+    """``npm i -g <adapter package>`` for the Muse adapter, from the spawn path.
+
+    Only the ADAPTER half: the ``muse`` host ships through Meta's own installer,
+    which the probe prints as text rather than naming an npm command that would not
+    install it. The adapter package name is imported so it cannot drift from the
+    constant the resolver searches for.
+    """
+    from kiro_crew.acp.client import MUSE_CODE_INSTALL_COMMAND
+
+    return MUSE_CODE_INSTALL_COMMAND
 
 
 def claude_adapter_install_command() -> str:

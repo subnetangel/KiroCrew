@@ -37,6 +37,7 @@ from kiro_crew.acp.harness.deepseek import DeepseekLaunch
 from kiro_crew.acp.harness.goose import GooseLaunch
 from kiro_crew.acp.harness.kas import KasHarness
 from kiro_crew.acp.harness.kiro import KiroHarness
+from kiro_crew.acp.harness.muse import MuseHarness
 from kiro_crew.acp.harness.opencode import OpencodeLaunch
 from kiro_crew.acp.harness.pi import PiLaunch
 from kiro_crew.acp.types import (
@@ -46,6 +47,7 @@ from kiro_crew.acp.types import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
 )
@@ -59,6 +61,7 @@ __all__ = [
     "KasHarness",
     "KiroHarness",
     "LaunchAdapter",
+    "MuseHarness",
     "NotificationAliases",
     "OpencodeLaunch",
     "PiLaunch",
@@ -84,6 +87,10 @@ _HARNESSES: dict[str, type[HarnessAdapter]] = {
     # a harness unreachable to its own tests, and would leave the runtime resolving
     # one that exists on disk but not in the table.
     ACP_BACKEND_CODEX: CodexHarness,
+    # Muse is reachable here while it is still dormant, exactly as the codex comment
+    # above describes: a harness is written and tested before ``ACP_BACKENDS_ACP_RUNTIME``
+    # routes a session onto the runtime, so this registration must not wait on the set.
+    ACP_BACKEND_MUSE: MuseHarness,
 }
 
 

@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shutil
 import signal
 import sys
 from pathlib import Path
@@ -32,6 +33,7 @@ from kiro_crew.acp.launch import LaunchTools
 from kiro_crew.acp.transport_errors import AcpError
 from kiro_crew.acp.types import (
     ACP_BACKEND_CODEX,
+    ACP_BACKEND_MUSE,
     ACP_BACKENDS_INTERNAL_SANDBOX,
     ACP_BACKENDS_POD_HOME_REMAP,
 )
@@ -258,6 +260,109 @@ def codex_acp_not_found_message(search_path: str) -> str:
         f"'npm i -g {CODEX_ACP_NPM_PKG}' (or add it as a project "
         f"dependency), or set {_ENV_CODEX_ACP_BIN} to its entry script. "
         f"The 'codex' CLI alone does not serve ACP."
+    )
+
+
+# ── muse-code-acp (ACP_BACKEND_MUSE) ──
+# Muse Code is codex-shaped but with TWO independently-absent components, so it is
+# resolved like pi rather than codex: ``muse-code-acp`` is the Node stdio ADAPTER
+# that speaks ACP, and ``muse`` is the HOST it drives (``muse serve`` over MSP).
+# The ``muse`` CLI does not speak ACP, so the adapter is the transport. Crew resolves
+# BOTH because the adapter must be told which ``muse`` to run (``MUSE_CODE_EXECUTABLE``
+# forwarded to the child), and the not-found message names whichever half is absent.
+MUSE_CODE_ACP_BIN = ACP_BACKEND_PROCESS_NAMES[ACP_BACKEND_MUSE]
+MUSE_CODE_ACP_NPM_PKG = ACP_BACKEND_NODE_ADAPTER_PACKAGES[ACP_BACKEND_MUSE]
+_MUSE_CODE_ACP_PKG_ENTRY = Path(MUSE_CODE_ACP_NPM_PKG, *NODE_ADAPTER_ENTRY_SEGMENTS)
+# Same hoisted-dependency completeness check every Node adapter shares: the adapter
+# imports @agentclientprotocol/sdk, so a root carrying the entry script without it
+# dies at ESM import time -- after the child is spawned.
+_MUSE_CODE_ACP_DEP_MARKER = launch_mod.ACP_SDK_DEP_MARKER
+# Explicit adapter override, spelled the way the adapter's own README spells it.
+_ENV_MUSE_CODE_ACP_BIN = "MUSE_CODE_ACP_BIN"
+# The adapter's OWN override for the ``muse`` host it spawns, read here as the
+# operator's choice and SET on the child so the adapter execs exactly that binary.
+_ENV_MUSE_CODE_EXECUTABLE = "MUSE_CODE_EXECUTABLE"
+# The host binary (``muse``) the adapter runs as ``muse serve``.
+MUSE_HOST_BIN = "muse"
+# One command installs the adapter. The ``muse`` host ships through Meta's own
+# installer (a curl|sh one-liner), which is printed as text for the operator and
+# NEVER executed -- see the install probe.
+MUSE_CODE_INSTALL_COMMAND = f"npm i -g {MUSE_CODE_ACP_NPM_PKG}"
+
+_muse_code_acp_argv_cache: tuple[list[str] | None, str] | object = launch_mod._UNRESOLVED
+
+_muse_host_bin_cache: tuple[str | None, str] | object = launch_mod._UNRESOLVED
+
+
+def _resolve_muse_code_acp_bin() -> tuple[list[str] | None, str]:
+    """Find the muse-code-acp Node entry script and the PATH searched for it.
+
+    The shared Node-adapter ladder with this adapter's parameters;
+    ``MUSE_CODE_ACP_BIN`` is the override.
+    """
+    return launch_mod._resolve_node_adapter_argv(
+        bin_name=MUSE_CODE_ACP_BIN,
+        override_env=_ENV_MUSE_CODE_ACP_BIN,
+        vendored_entry=lambda: launch_mod._vendored_adapter_entry(
+            _MUSE_CODE_ACP_PKG_ENTRY, _MUSE_CODE_ACP_DEP_MARKER
+        ),
+    )
+
+
+def _resolve_muse_host_bin() -> tuple[str | None, str]:
+    """Find the ``muse`` host executable and the PATH searched for it.
+
+    The plain-binary ladder: ``MUSE_CODE_EXECUTABLE`` override, then PATH. The
+    override rung is the ADAPTER's variable, so an operator who told the adapter which
+    ``muse`` to run has already made the choice this resolver exists to honour -- and
+    Crew forwards that same variable to the child, so setting it does not lose the
+    operator's choice, it carries it.
+    """
+    from kiro_crew.acp.client import augmented_path
+
+    search_path = augmented_path(os.environ.get("PATH", ""))
+    override = os.environ.get(_ENV_MUSE_CODE_EXECUTABLE)
+    if override:
+        if platform_compat.is_executable_file(override):
+            return launch_mod._normalize_exe_casing(override) or override, search_path
+        on_path = shutil.which(override, path=search_path)
+        if on_path:
+            return launch_mod._normalize_exe_casing(on_path) or on_path, search_path
+    on_path = shutil.which(MUSE_HOST_BIN, path=search_path)
+    if on_path:
+        return launch_mod._normalize_exe_casing(on_path) or on_path, search_path
+    return None, search_path
+
+
+def muse_code_acp_not_found_message(search_path: str) -> str:
+    """The one wording for "the muse-code adapter is not installed".
+
+    Authored once for every spawn path that resolves the adapter. Names the adapter
+    half specifically, since the HOST half has its own message and either can be
+    absent on its own. *search_path* is what the resolver actually walked.
+    """
+    return (
+        f"{MUSE_CODE_ACP_BIN} not found "
+        f"({describe_search_path(search_path)}). Install it with "
+        f"'{MUSE_CODE_INSTALL_COMMAND}' (or add it as a project dependency), or set "
+        f"{_ENV_MUSE_CODE_ACP_BIN} to its entry script. The 'muse' CLI alone does not "
+        "serve ACP."
+    )
+
+
+def muse_host_not_found_message(search_path: str) -> str:
+    """The one wording for "the muse host binary is not installed".
+
+    The adapter resolves but the ``muse`` it must drive does not. The remedy is
+    Meta's own installer, printed as TEXT for the operator to run in a terminal --
+    Crew never pipes an installer to a shell.
+    """
+    return (
+        f"{MUSE_HOST_BIN} not found "
+        f"({describe_search_path(search_path)}). The {MUSE_CODE_ACP_BIN} adapter is "
+        f"installed but the 'muse' host it drives is not. Install Muse Code from Meta's "
+        f"own installer in your terminal, or set {_ENV_MUSE_CODE_EXECUTABLE} to the "
+        "'muse' executable, then start a new chat."
     )
 
 
