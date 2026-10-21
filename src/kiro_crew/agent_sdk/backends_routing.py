@@ -394,23 +394,23 @@ ACP_BACKEND_ROUTING: dict = {
     # extension Crew composes, which is this member, and the frame corpus carries the
     # live capture (``test/fixtures/acp_frames/deepseek/permission-request-live``).
     ACP_BACKEND_DEEPSEEK: Routing.VERIFIED_GATE_EXTENSION,
-    # muse is UNVERIFIED, and this is the honest state rather than a gap nobody
-    # filled. The mechanism it WILL use is clear: MSP ``ApprovalMode`` is a closed
-    # enum (``allowAll | promptUnmatched | onRequest | denyUnmatched``), Crew would
-    # seed ``promptUnmatched`` at ``session/start`` (via ``approvalMode``), and the
-    # ``Session`` object carries ``approvalMode: EffectiveApprovalModeState`` to read
-    # back before the first prompt -- the exact shape of
-    # ``VERIFIED_SEEDED_SETTINGS``, goose's mechanism. What is missing is the
-    # OBSERVATION: Track A runs in parallel and the seed + read-back has not been
-    # driven on this host's Muse 1.4.11 (adapter at 487fa6c pins the 1.4.8 SDK, a
-    # different schema fingerprint). ``UNVERIFIED`` always resolves INDETERMINATE,
-    # which refuses -- and it is the member that keeps ``register_selectable_backend``
-    # from shipping this harness selectable before the gate is real. The moment Track
-    # A proves the seed takes and reads back, this becomes
-    # ``Routing.VERIFIED_SEEDED_SETTINGS`` with a ``("approvalMode", "promptUnmatched")``
-    # row in ``ACP_BACKEND_PERMISSION_SETTING`` below -- a one-line flip, not a new
-    # mechanism, because the mechanism already exists for goose.
-    ACP_BACKEND_MUSE: Routing.UNVERIFIED,
+    # muse reaches goose's member by goose's reasoning. MSP ``ApprovalMode`` is a
+    # closed enum (``allowAll | promptUnmatched | onRequest | denyUnmatched``) and
+    # the host's own default (``onRequest``) lets the model decide when to ask, so a
+    # session supplied nothing would gate only what the model chose to surface.
+    # Crew supplies ``promptUnmatched`` as the session is CREATED -- the
+    # ``muse-code-acp`` adapter takes it in ``session/new``'s ``_meta`` under
+    # ``"muse/approval"`` -- and the SAME response carries the policy the adapter
+    # resolved, as the ``nativeApprovalPolicy`` config option's ``currentValue``.
+    # That is the read-back: one round trip, no second child, no file. Driven on
+    # Muse 1.4.11 through the adapter's ``sdk`` backend: the seeded session read
+    # ``promptUnmatched`` back before its first prompt, a shell command drew a real
+    # ``session/request_permission``, and the client's deny stopped the command.
+    # The seam is advertised rather than assumed: the client opts in with
+    # ``_meta["muse/approval"] = 1`` on ``initialize`` and the adapter answers
+    # ``_meta["muse/approval"].seedAtSessionNew`` -- an adapter that does not
+    # advertise it has its seed ignored, which the read-back then refuses.
+    ACP_BACKEND_MUSE: Routing.VERIFIED_SEEDED_SETTINGS,
 }
 
 
@@ -455,6 +455,15 @@ ACP_BACKEND_PERMISSION_CONFIG: dict = {
 ACP_BACKEND_PERMISSION_SETTING: dict = {
     ACP_BACKEND_OPENCODE: ("permission", "ask"),
     ACP_BACKEND_GOOSE: ("GOOSE_MODE", "approve"),
+    # The KEY is the ACP config option the adapter reads the policy back through
+    # (``configOptions[].id == "nativeApprovalPolicy"``), because that is the one
+    # name on the wire both halves share: the seed travels under ``_meta`` and the
+    # adapter's answer comes back under this id, so naming the id here is what lets
+    # the refusal say which option read wrong. ``promptUnmatched`` is the only
+    # value of the closed enum under which an unmatched tool call PROMPTS: the
+    # host's own default ``onRequest`` asks only when the model requests it,
+    # ``allowAll`` never asks, and ``denyUnmatched`` refuses rather than asks.
+    ACP_BACKEND_MUSE: ("nativeApprovalPolicy", "promptUnmatched"),
 }
 
 
