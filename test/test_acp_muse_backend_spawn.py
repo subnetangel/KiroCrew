@@ -247,11 +247,14 @@ class TestDormantState:
         assert ACP_BACKEND_MUSE in ACP_BACKENDS_HARNESS_OWNED_SESSIONS
 
     def test_the_measured_sets_stay_out_until_driven(self):
-        """Session sharing, eviction and the MCP array are MEASURED claims, and Track
-        A holds the captures, so a dormant harness is not a member of any of them."""
+        """Session sharing and eviction are MEASURED claims Track A has not driven, so
+        a dormant harness is not a member of either. The MCP array is the one measured
+        set it HAS joined: Track A §2b drove a stdio element passed in the session/new
+        array and the model called it (mcp__probeping__ping -> pong), so Muse's MCP
+        projection is a mirror and it is in ACP_BACKENDS_SESSION_MCP_ARRAY."""
         assert ACP_BACKEND_MUSE not in ACP_BACKENDS_SESSION_SHARING
         assert ACP_BACKEND_MUSE not in ACP_BACKENDS_SESSION_EVICTION
-        assert ACP_BACKEND_MUSE not in ACP_BACKENDS_SESSION_MCP_ARRAY
+        assert ACP_BACKEND_MUSE in ACP_BACKENDS_SESSION_MCP_ARRAY
 
     def test_the_auth_declaration_fences_its_leaf_but_carves_nothing(self):
         """own_credential_file, the leaf relocated under XDG_CONFIG_HOME, and -- because
