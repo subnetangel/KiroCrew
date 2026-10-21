@@ -314,7 +314,11 @@ class StdioDriver:
             ) from exc
 
     def request(
-        self, method: str, params: dict[str, Any], *, answer: Callable[[dict[str, Any]], str] | None = None
+        self,
+        method: str,
+        params: dict[str, Any],
+        *,
+        answer: Callable[[dict[str, Any]], str] | None = None,
     ) -> dict[str, Any]:
         """Send a request and pump the wire until its response arrives.
 
@@ -386,7 +390,11 @@ class StdioDriver:
                 )
                 return
             self._send(
-                {"jsonrpc": "2.0", "id": request_id, "result": {"outcome": {"outcome": "cancelled"}}}
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {"outcome": {"outcome": "cancelled"}},
+                }
             )
             return
         # Any other inbound request: this capture client implements none.
@@ -454,7 +462,9 @@ class StdioDriver:
             # The rejection is the point; it arrives as an error frame already recorded.
             pass
 
-    def prompt(self, text: str, *, answer: Callable[[dict[str, Any]], str] | None = None) -> dict[str, Any]:
+    def prompt(
+        self, text: str, *, answer: Callable[[dict[str, Any]], str] | None = None
+    ) -> dict[str, Any]:
         return self.request(
             "session/prompt",
             {"sessionId": self.session_id, "prompt": [{"type": "text", "text": text}]},
@@ -726,8 +736,15 @@ def host_markers(text: str) -> list[tuple[str, str]]:
 
 
 def drive(
-    scenario: str, *, adapter: list[str], host: str, timeout: float, mount_probe: bool,
-    prompt: str | None, answer: Callable[[dict[str, Any]], str] | None, load_absent: bool,
+    scenario: str,
+    *,
+    adapter: list[str],
+    host: str,
+    timeout: float,
+    mount_probe: bool,
+    prompt: str | None,
+    answer: Callable[[dict[str, Any]], str] | None,
+    load_absent: bool,
 ) -> tuple[list[dict[str, Any]], str, str, str]:
     """Run ONE scenario in a fresh session; return (raw frames, version, name, session id)."""
     cwd = Path(tempfile.mkdtemp(prefix=f"muse-cap-{scenario}-"))
@@ -744,8 +761,12 @@ def drive(
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="capture_muse_frames.py", description=__doc__)
-    parser.add_argument("--out", type=Path, default=None, help="Output dir (default build/acp-capture/muse/).")
-    parser.add_argument("--timeout", type=float, default=180.0, help="Per-frame wait seconds (default 180).")
+    parser.add_argument(
+        "--out", type=Path, default=None, help="Output dir (default build/acp-capture/muse/)."
+    )
+    parser.add_argument(
+        "--timeout", type=float, default=180.0, help="Per-frame wait seconds (default 180)."
+    )
     parser.add_argument(
         "--into-corpus",
         action="store_true",
@@ -779,8 +800,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         for name, mount, prompt, answer, load_absent in scenarios:
             raw, version, aname, session_id, cwd = drive(
-                name, adapter=adapter, host=host, timeout=args.timeout,
-                mount_probe=mount, prompt=prompt, answer=answer, load_absent=load_absent,
+                name,
+                adapter=adapter,
+                host=host,
+                timeout=args.timeout,
+                mount_probe=mount,
+                prompt=prompt,
+                answer=answer,
+                load_absent=load_absent,
             )
             if version != "unmeasured":
                 agent_version = version
@@ -815,7 +842,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Still dump the raw reduced frames so the finding can be inspected.
         dump = out_dir / "FINDING"
         for name, data in captured.items():
-            write_fixture(dump / f"{name}.jsonl", meta_header(agent_version, agent_name, "FINDING: MCP did not prompt"), data["frames"])
+            write_fixture(
+                dump / f"{name}.jsonl",
+                meta_header(agent_version, agent_name, "FINDING: MCP did not prompt"),
+                data["frames"],
+            )
         print(f"  frames written under {dump}", file=sys.stderr)
         return 4
 
@@ -876,47 +907,67 @@ def _headers(
         return f"{common}{specific} Reductions: {reductions}. The ids are synthetic; nothing else is altered."
 
     return {
-        "handshake": meta_header(agent_version, agent_name, note(
-            "handshake",
-            "Covers the initialize result (protocolVersion, agentInfo.version); the "
-            "session/new result whose configOptions read BOTH "
-            "nativeApprovalPolicy.currentValue=promptUnmatched AND "
-            "nativePermissionProfile.currentValue=:ask-me back in the SAME response; and "
-            "the absent-id session/load rejection (-32602, this host's shape, NOT -32002).",
-        )),
-        "turn": meta_header(agent_version, agent_name, note(
-            "turn",
-            "The builtin shell turn, ALLOW path (allow_once). The sandboxed first attempt "
-            "fails and the model retries with escalated sandbox, which draws a "
-            "session/request_permission; answering allow_once runs it to a completed "
-            "tool_call_update with the command's output. All seven required classes.",
-        )),
-        "permission-deny": meta_header(agent_version, agent_name, note(
-            "permission-deny",
-            "The same shell turn, DENY path (abort): the session/request_permission is "
-            "answered abort, leaving the call failed with no completed execute update -- "
-            "the deny stops the command.",
-        )),
-        "mcp-stdio-mount": meta_header(agent_version, agent_name, note(
-            "mcp-stdio-mount",
-            "THE PROOF (deny). A dependency-free stdio MCP server (one tool, "
-            f"{PROBE_TOOL_NAME}) is passed in the session/new mcpServers array. Under the "
-            "two-part seed (:ask-me profile) the MCP tool call "
-            f"{PROBE_TOOL_ID} DREW a real session/request_permission reaching the client; "
-            "answering abort left the call failed -- the deny stopped the MCP call. "
-            "Host option kinds offered: allow_once (allow_once), allow_session "
-            "(allow_always), allow_local_mcp_tool (reject_always -- the adapter maps a "
-            "localPersistent approvedPolicyAmendment to that kind), abort (reject_once). "
-            "The tool grammar is mcp__<server>__<tool>; crew-probe is normalized to "
-            "crew_probe.",
-        )),
-        "mcp-stdio-allow": meta_header(agent_version, agent_name, note(
-            "mcp-stdio-allow",
-            "THE PROOF (allow). The same MCP tool call drawing the same "
-            "session/request_permission; answering allow_once ran it to a completed "
-            f"tool_call_update carrying the marker {PROBE_MARKER!r} -- the round trip is "
-            "proven and the permission request is real.",
-        )),
+        "handshake": meta_header(
+            agent_version,
+            agent_name,
+            note(
+                "handshake",
+                "Covers the initialize result (protocolVersion, agentInfo.version); the "
+                "session/new result whose configOptions read BOTH "
+                "nativeApprovalPolicy.currentValue=promptUnmatched AND "
+                "nativePermissionProfile.currentValue=:ask-me back in the SAME response; and "
+                "the absent-id session/load rejection (-32602, this host's shape, NOT -32002).",
+            ),
+        ),
+        "turn": meta_header(
+            agent_version,
+            agent_name,
+            note(
+                "turn",
+                "The builtin shell turn, ALLOW path (allow_once). The sandboxed first attempt "
+                "fails and the model retries with escalated sandbox, which draws a "
+                "session/request_permission; answering allow_once runs it to a completed "
+                "tool_call_update with the command's output. All seven required classes.",
+            ),
+        ),
+        "permission-deny": meta_header(
+            agent_version,
+            agent_name,
+            note(
+                "permission-deny",
+                "The same shell turn, DENY path (abort): the session/request_permission is "
+                "answered abort, leaving the call failed with no completed execute update -- "
+                "the deny stops the command.",
+            ),
+        ),
+        "mcp-stdio-mount": meta_header(
+            agent_version,
+            agent_name,
+            note(
+                "mcp-stdio-mount",
+                "THE PROOF (deny). A dependency-free stdio MCP server (one tool, "
+                f"{PROBE_TOOL_NAME}) is passed in the session/new mcpServers array. Under the "
+                "two-part seed (:ask-me profile) the MCP tool call "
+                f"{PROBE_TOOL_ID} DREW a real session/request_permission reaching the client; "
+                "answering abort left the call failed -- the deny stopped the MCP call. "
+                "Host option kinds offered: allow_once (allow_once), allow_session "
+                "(allow_always), allow_local_mcp_tool (reject_always -- the adapter maps a "
+                "localPersistent approvedPolicyAmendment to that kind), abort (reject_once). "
+                "The tool grammar is mcp__<server>__<tool>; crew-probe is normalized to "
+                "crew_probe.",
+            ),
+        ),
+        "mcp-stdio-allow": meta_header(
+            agent_version,
+            agent_name,
+            note(
+                "mcp-stdio-allow",
+                "THE PROOF (allow). The same MCP tool call drawing the same "
+                "session/request_permission; answering allow_once ran it to a completed "
+                f"tool_call_update carrying the marker {PROBE_MARKER!r} -- the round trip is "
+                "proven and the permission request is real.",
+            ),
+        ),
     }
 
 
