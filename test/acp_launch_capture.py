@@ -47,7 +47,6 @@ from kiro_crew.acp.client import AcpClient
 from kiro_crew.acp.harness import claude as claude_mod
 from kiro_crew.acp.harness import codex as codex_harness_mod
 from kiro_crew.acp.harness import deepseek as deepseek_mod
-from kiro_crew.acp.harness import muse as muse_harness_mod
 from kiro_crew.acp.harness import opencode as opencode_mod
 from kiro_crew.acp.harness import pi as pi_mod
 from kiro_crew.acp.runtime import AcpRuntime
@@ -664,11 +663,8 @@ def _capture_runtime_served(
             patch.object(
                 codex_harness_mod, "resolve_spawn_masks", new=AsyncMock(return_value=((), ()))
             ),
-            # muse imports the SAME resolver by name, so it holds its own reference;
-            # stubbed too, or the muse row would run the real sandbox preflight.
-            patch.object(
-                muse_harness_mod, "resolve_spawn_masks", new=AsyncMock(return_value=((), ()))
-            ),
+            # muse reaches the SAME resolver through the codex module attribute at call
+            # time (not a by-name import), so the one stub above governs its row too.
             patch.object(codex_harness_mod, "_sandbox_wrapper_generations", return_value=0),
         ]
     )

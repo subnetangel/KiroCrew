@@ -312,15 +312,17 @@ ACP_BACKEND_DEEPSEEK = "deepseek"
 # codex (the adapter multiplexes sessions over one ``muse serve``). Its MSP permission
 # mode is a CLOSED enum (``allowAll | promptUnmatched | onRequest | denyUnmatched``)
 # and the ``Session`` object reads the effective mode back, which is the seam Crew's
-# ``VERIFIED_SEEDED_SETTINGS`` routing would use.
+# ``VERIFIED_SEEDED_SETTINGS`` routing uses.
 #
-# LANDS DORMANT. At onboarding the live seam -- that Crew can seed ``promptUnmatched``
-# at ``session/new`` and read it back before the first prompt -- is not yet proven on
-# this host's Muse 1.4.11, so its routing is ``Routing.UNVERIFIED`` and it is named in
-# ``NOT_SHIPPED_SELECTABLE`` rather than faking a read-back or relaxing a gate. Its id
-# is spellable, it carries a complete card, an auth declaration and an install probe,
-# and it flips to selectable by proving the seed/read-back and declaring
-# ``VERIFIED_SEEDED_SETTINGS`` -- a one-stage change, not a re-litigation.
+# SELECTABLE. It landed dormant (``Routing.UNVERIFIED``, named in the editable test's
+# ``NOT_SHIPPED_SELECTABLE``) while the live seam was unproven, and left that set in
+# two measured steps on this host's Muse 1.4.11: first the approval policy seeded at
+# ``session/new`` and read back in the same response, with a shell command drawing a
+# live ``session/request_permission``; then -- because that same run showed an MCP
+# tool call cleared by Muse's own reviewer under the default ``:auto-review``
+# profile -- the ``:ask-me`` permission profile seeded and read back beside it, after
+# which the MCP call prompts too (``test/fixtures/acp_frames/muse/``). Its routing is
+# ``VERIFIED_SEEDED_SETTINGS`` over BOTH settings (``permission_settings_for``).
 ACP_BACKEND_MUSE = "muse"
 # The kiro-cli backend is spelled as the empty string throughout, so name it
 # rather than leaving every call site to infer it from "not claude".
@@ -462,6 +464,24 @@ ACP_BACKENDS_INDEPENDENT_SETUP: FrozenSet[str] = frozenset(
 #:   marker, keyed to this session's nonce and to Crew's sealed file, read before the
 #:   first prompt. See :data:`Routing.VERIFIED_GATE_EXTENSION` and
 #:   :data:`Readback.LOAD_MARKER`.
+#: ``ACP_BACKEND_MUSE`` is included on the same two conditions, met by the FIRST
+#: mechanism, TWICE over -- Muse's host gate is two settings, not one:
+#:
+#: * ``backend_install`` probes for two components, the ``muse-code-acp`` adapter and
+#:   the ``muse`` host binary, because Muse serves its own protocol (MSP) and the
+#:   adapter is what speaks ACP for it, the codex shape.
+#: * its tool calls are ROUTED and the routing is VERIFIED. Crew seeds BOTH the native
+#:   approval policy (``promptUnmatched``, the one value of the closed enum under
+#:   which an unmatched call PROMPTS) and the native permission profile (``:ask-me``,
+#:   reviewer authority ``human``) in ``session/new``'s ``_meta``, and the adapter
+#:   reads BOTH back in the SAME response's ``configOptions``. Either half alone is
+#:   not a gate: under the host's default ``:auto-review`` profile a live capture
+#:   showed a session-mounted MCP tool call cleared by Muse's own reviewer with NO
+#:   permission request, while the shell path prompted; under ``:ask-me`` the same
+#:   MCP call draws a real ``session/request_permission`` and the deny fails it
+#:   (``test/fixtures/acp_frames/muse/``). A profile the host does not commit refuses
+#:   the first turn (the adapter requires it; never the host default silently). See
+#:   :data:`Routing.VERIFIED_SEEDED_SETTINGS` and ``permission_settings_for``.
 BASELINE_SELECTABLE_BACKENDS: FrozenSet[str] = frozenset(
     {
         ACP_BACKEND_KIRO,
@@ -472,6 +492,7 @@ BASELINE_SELECTABLE_BACKENDS: FrozenSet[str] = frozenset(
         ACP_BACKEND_PI,
         ACP_BACKEND_GOOSE,
         ACP_BACKEND_DEEPSEEK,
+        ACP_BACKEND_MUSE,
     }
 )
 

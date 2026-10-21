@@ -58,9 +58,9 @@ logger = logging.getLogger("kiro_crew.agent_sdk.backends")
 #
 # ``ACP_BACKEND_MUSE`` is NOT a member: MSP switches the model with a dedicated
 # ``session/setModel`` verb and lists models via ``model/list``, and whether the ACP
-# adapter re-exposes that as a ``session/new`` ``model`` config option is a Track A
-# fact not yet captured. A dormant harness claims no config-option channel on an
-# unmeasured advertisement; it joins when the adapter's ``configOptions`` are driven.
+# adapter re-exposes that as a ``session/new`` ``model`` config option is a
+# fact not yet captured. No harness claims a config-option channel on an
+# unmeasured advertisement; it joins when the adapter's model ``configOptions`` are driven.
 ACP_BACKENDS_MODEL_VIA_CONFIG_OPTION = frozenset(
     {
         ACP_BACKEND_CLAUDE,

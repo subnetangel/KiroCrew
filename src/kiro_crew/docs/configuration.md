@@ -135,6 +135,7 @@ provider.
 | `pi` | Pi | Uses `pi-acp` and its Pi gate extension. |
 | `goose` | goose | Uses goose's native ACP server. |
 | `deepseek` | DeepSeek Harness | Runs `dsh --profile acp` with Kiro Crew's gate plugin; provider keys come from `agent.deepseek_env`. |
+| `muse` | Muse Code | Uses the `muse-code-acp` adapter in front of `muse serve`; sign in by running `muse` in your terminal (its credential lives at `~/.config/muse/auth.json`). |
 
 Codex runs with `~/.aws/credentials` and `~/.aws/sso/cache` hidden on purpose,
 and only `~/.aws/config` readable. Codex on Amazon Bedrock therefore needs a

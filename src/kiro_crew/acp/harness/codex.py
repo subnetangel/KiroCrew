@@ -184,7 +184,7 @@ def _sandbox_wrapper_generations(sandbox_mode: str) -> int:
 
 
 async def resolve_spawn_masks(
-    sandbox_mode: str, backend: str = ACP_BACKEND_CODEX
+    sandbox_mode: str, backend: str
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """``(hidden_dirs, expose_files)`` for the spawn, or a refusal.
 
@@ -211,8 +211,9 @@ async def resolve_spawn_masks(
     Keyed on the ROUTING, never on codex's identity: the preflight re-checks
     ``acp_tool_gate.is_enforced`` itself, so this cannot mask a harness this core
     does not enforce, and another enforced adapter-shaped harness gets the same
-    treatment by naming itself as *backend* (muse does). The default keeps codex's
-    own call byte-identical.
+    treatment by naming itself as *backend* (muse does). There is no default: a
+    shared seam that defaulted to one harness's id would let another inherit that
+    harness's mask by omission (harness-parity H1), so every caller names itself.
     """
     from kiro_crew.acp import client as client_mod
 
@@ -280,7 +281,7 @@ class CodexHarness(MembershipHarness):
             # authorings of it drift. The search path is threaded through so a
             # "searched ..." line can never name a directory the search skipped.
             raise AcpRuntimeError(client_mod.codex_acp_not_found_message(search_path))
-        hidden, expose = await resolve_spawn_masks(ctx.sandbox_mode)
+        hidden, expose = await resolve_spawn_masks(ctx.sandbox_mode, self.backend)
         wrapper_generations = await asyncio.to_thread(
             _sandbox_wrapper_generations, ctx.sandbox_mode
         )

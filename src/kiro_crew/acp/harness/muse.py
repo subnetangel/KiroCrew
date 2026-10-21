@@ -47,11 +47,11 @@ profile too: the seam carries TWO settings -- the approval policy
 (``nativeApprovalPolicy = promptUnmatched``) AND the permission profile
 (``nativePermissionProfile = :ask-me``, one named constant
 :data:`~kiro_crew.agent_sdk.backends.MUSE_ASK_ME_PROFILE_ID`) -- and BOTH are read
-back and either changing trips the tripwire. The fork adapter's
-``session/start.permissionProfile`` member is what consumes the profile seed; until
-that adapter ships it AND the integration corpus proves an MCP tool call drawing a
-``session/request_permission`` under Ask-me, the harness must not be selectable.
-Flipping selectability is the parent's integration step, not this seam's. See
+back and either changing trips the tripwire. The fork adapter consumes the profile
+seed as MSP's ``session/start.permissionProfile`` and REQUIRES the host's committed
+profile to match, refusing the turn otherwise; the re-captured corpus shows the MCP
+tool call drawing a ``session/request_permission`` under Ask-me and the deny failing
+it. That is the evidence the harness is selectable on. See
 ``docs/system-specs/modules/harness-onboarding.md``.
 """
 
@@ -63,6 +63,7 @@ from pathlib import Path
 from typing import Any
 
 from kiro_crew import acp_tool_gate
+from kiro_crew.acp.harness import codex as _codex
 from kiro_crew.acp.harness._common import MembershipHarness
 from kiro_crew.acp.harness.base import (
     NotificationAliases,
@@ -71,7 +72,6 @@ from kiro_crew.acp.harness.base import (
     SpawnPlan,
     TeardownPolicy,
 )
-from kiro_crew.acp.harness.codex import resolve_spawn_masks
 from kiro_crew.acp.types import (
     ACP_BACKEND_MUSE,
     ACP_CLIENT_CAPABILITIES,
@@ -138,7 +138,7 @@ def _approval_seed() -> dict[str, Any]:
 
 
 class MuseHarness(MembershipHarness):
-    """The muse-code-acp host, codex-shaped and currently dormant."""
+    """The muse-code-acp host, codex-shaped: an ACP adapter in front of ``muse serve``."""
 
     backend = ACP_BACKEND_MUSE
 
@@ -185,7 +185,12 @@ class MuseHarness(MembershipHarness):
             # message names the HOST half, since either component can be absent alone.
             raise AcpRuntimeError(client_mod.muse_host_not_found_message(host_search))
         self._muse_host_bin = host_bin
-        hidden, expose = await resolve_spawn_masks(ctx.sandbox_mode, self.backend)
+        # Looked up on the codex module at call time rather than imported by name, so
+        # the ONE resolver has ONE patch point: a capture that stubs or restores
+        # ``codex.resolve_spawn_masks`` governs this harness too, and the preflight
+        # ratchet (``test_every_enforced_harness_reaches_the_spawn_preflight``) counts
+        # the real call here as it does on codex.
+        hidden, expose = await _codex.resolve_spawn_masks(ctx.sandbox_mode, self.backend)
         return SpawnPlan(
             argv=list(adapter_argv),
             extra_hidden_dirs=hidden,
@@ -349,7 +354,7 @@ class MuseHarness(MembershipHarness):
         """No -- Muse defines no ``_kiro/openExternalUrl`` sign-in channel.
 
         Inherited from ``MembershipHarness`` through ``ACP_BACKENDS_OPEN_EXTERNAL_URL``
-        (Muse is not a member); stated here so the dormant answer is explicit.
+        (Muse is not a member); stated here so the answer is explicit.
         """
         return super().opens_external_urls
 

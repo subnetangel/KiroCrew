@@ -37,9 +37,10 @@ from kiro_crew.agent_sdk.backends import (
 # (``test/fixtures/acp_frames/claude/saved-spec-projection-live.jsonl``): the
 # server the mirror projected out of a saved spec ran in the session. Codex and
 # DeepSeek rest on unit tests only.
-# muse is NOT a member: a projected spec would need the session MCP array channel it
-# does not yet have (its projection is ``no-channel``), and nothing confirms a
-# consumed projection against saved intent on an unverified, dormant harness.
+# muse is NOT a member: its projection is a mirror onto the session MCP array
+# (``ACP_BACKENDS_SESSION_MCP_ARRAY``), and the live corpus proves a RAW stdio element
+# mounts and prompts -- but nothing yet confirms a projection made from a SAVED member
+# spec against saved intent in a live session, which is the capture this set rests on.
 ACP_BACKENDS_MEMBER_CAPABILITIES = frozenset(
     {
         ACP_BACKEND_KIRO,

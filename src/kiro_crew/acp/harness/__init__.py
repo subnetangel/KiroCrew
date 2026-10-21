@@ -87,9 +87,10 @@ _HARNESSES: dict[str, type[HarnessAdapter]] = {
     # a harness unreachable to its own tests, and would leave the runtime resolving
     # one that exists on disk but not in the table.
     ACP_BACKEND_CODEX: CodexHarness,
-    # Muse is reachable here while it is still dormant, exactly as the codex comment
-    # above describes: a harness is written and tested before ``ACP_BACKENDS_ACP_RUNTIME``
-    # routes a session onto the runtime, so this registration must not wait on the set.
+    # Muse is registered here independently of its selectability, exactly as the codex
+    # comment above describes: a harness is written and tested before
+    # ``ACP_BACKENDS_ACP_RUNTIME`` routes a session onto the runtime, so this
+    # registration must not wait on the set.
     ACP_BACKEND_MUSE: MuseHarness,
 }
 

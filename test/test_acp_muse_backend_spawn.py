@@ -79,12 +79,15 @@ def _patch_both(adapter_result, host_result):
     resolves it on every spawn and the real one probes the host's sandbox.
     """
     from kiro_crew.acp import client as client_mod
+    from kiro_crew.acp.harness import codex as codex_mod
 
     return (
         patch.object(client_mod, "_resolve_muse_code_acp_bin", return_value=adapter_result),
         patch.object(client_mod, "_resolve_muse_host_bin", return_value=host_result),
+        # Muse reaches the shared resolver through the codex module attribute at call
+        # time, so the patch lives there -- the one seam the preflight ratchet also uses.
         patch.object(
-            harness_mod, "resolve_spawn_masks", new=AsyncMock(return_value=(_HIDDEN, _EXPOSE))
+            codex_mod, "resolve_spawn_masks", new=AsyncMock(return_value=(_HIDDEN, _EXPOSE))
         ),
     )
 

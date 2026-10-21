@@ -167,7 +167,7 @@ ACP_BACKENDS_SIDE_READONLY = frozenset(
 # are driver detail); this set is the vocabulary half, and a test asserts the two agree so
 # a row and its membership cannot drift apart.
 # muse is NOT a member: its tool-call frame identity on MSP is not captured, and a
-# dormant harness opts into a fail-closed refusal only on a recorded corpus.
+# harness opts into a fail-closed refusal only on a recorded corpus.
 ACP_BACKENDS_META_IDENTITY: FrozenSet[str] = frozenset({ACP_BACKEND_GOOSE})
 
 # Backends whose ``session/request_permission`` names no ``kind`` and whose
@@ -197,7 +197,7 @@ ACP_BACKENDS_META_IDENTITY: FrozenSet[str] = frozenset({ACP_BACKEND_GOOSE})
 # (allocated for every backend) to ``_dispatch.build_permission_event``; a
 # non-member's parser receives none and the frame's own ``kind`` stands.
 # muse is NOT a member: unmeasured, and carrying a wrong kind onto a permission event
-# can only narrow or veto, so a dormant harness stays out.
+# can only narrow or veto, so an unmeasured harness stays out.
 ACP_BACKENDS_PERMISSION_KIND_FROM_TOOL_CALL: FrozenSet[str] = frozenset({ACP_BACKEND_KAS})
 
 # Backends whose child may ask THIS host for an access token over the

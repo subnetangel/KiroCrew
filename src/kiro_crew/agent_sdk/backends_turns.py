@@ -67,7 +67,7 @@ from kiro_crew.agent_sdk.backends import (
 # ``ACP_BACKENDS_STEERING_REQUEST`` below instead, and the two questions are read
 # off separate properties (``supports_steer`` and ``supports_refusal_steer``).
 # muse is not a member: MSP has ``turn/steer`` (and ``turn/interrupt``), but neither
-# its steer contract nor a deny-notice capability is captured, and a dormant harness
+# its steer contract nor a deny-notice capability is captured, and a harness
 # claims neither steering set until driven.
 ACP_BACKENDS_STEER = frozenset({ACP_BACKEND_KIRO, ACP_BACKEND_KAS})
 
@@ -284,11 +284,12 @@ ACP_BACKENDS_STEER_CONCURRENT_PROMPT = frozenset({ACP_BACKEND_OPENCODE})
 # :data:`ACP_BACKENDS_CONTEXT_RECYCLE` carries the consequence, because deepseek
 # reports no compaction at all, so a decline leaves its context unbounded.
 # muse is also a non-member: MSP has a ``session/compact`` verb, but its turn shape is
-# unobserved, so a dormant harness is not handed ``/compact`` on an unmeasured
+# unobserved, so the harness is not handed ``/compact`` on an unmeasured
 # capability. Like deepseek, the consequence is carried by
 # :data:`ACP_BACKENDS_CONTEXT_RECYCLE` -- which Muse is ALSO out of, so it declines at
 # the threshold and is logged at WARNING rather than silently leaking or being
-# recycled, the honest dormant answer until its compaction is driven.
+# recycled, the honest answer until its compaction is driven
+# (``scripts/capture_acp_compaction.py`` is the drive).
 ACP_BACKENDS_COMPACT = frozenset(
     {
         ACP_BACKEND_KIRO,

@@ -893,81 +893,86 @@ only recurring edit points left that a membership set does not already absorb.
 
 ## Worked example: Muse Code
 
-The run to read for what a DORMANT landing looks like when every mechanical stage is
-done and the one thing missing is a live measurement. Muse Code (Meta's terminal
-agent, reached through the `@bex-co/muse-code-acp` Node adapter in front of
-`muse serve`) is codex-shaped — one adapter multiplexes N sessions over one host, so
-it is an `AcpRuntime` `HarnessAdapter` — but it is in `ACP_BACKENDS_KNOWN` and NOT in
-`BASELINE_SELECTABLE_BACKENDS`: it is named in `NOT_SHIPPED_SELECTABLE` with its
-reason, because its routing is `Routing.UNVERIFIED` until a live seam is proven.
+The run to read for what a DORMANT landing looks like, and for what it takes to leave
+it: every mechanical stage done first, then each gap flipped by a live measurement
+with an address. Muse Code (Meta's terminal agent, reached through the
+`muse-code-acp` Node adapter in front of `muse serve`) is codex-shaped — one adapter
+multiplexes N sessions over one host, so it is an `AcpRuntime` `HarnessAdapter`. It
+landed in `ACP_BACKENDS_KNOWN` and NOT in `BASELINE_SELECTABLE_BACKENDS`, named in
+`NOT_SHIPPED_SELECTABLE` with its reason, and left that set in two measured steps.
 
 | Stage | State |
 |---|---|
-| 1 vocabulary | Done — `ACP_BACKEND_MUSE = "muse"`, in `ACP_BACKENDS_KNOWN`, `PROVIDER_LABEL_MUSE = "Muse Code"`, policy name mapped, its own `muse` model-registry namespace. Deliberately NOT in `BASELINE_SELECTABLE_BACKENDS` or the first-run independent-setup set. |
-| 2 capability sets | Decided for every set. IN `ACP_BACKENDS_ACP_RUNTIME` (the adapter multiplexes like codex) and `ACP_BACKENDS_HARNESS_OWNED_SESSIONS` (MSP persists sessions and resolves a load/resume from the host-assigned id). OUT of every measured set — session sharing, eviction, the session MCP array, the model/effort/advertised channels, every member-capability set, side read-only, both compaction sets (and context recycle — so it declines at the threshold and is logged, not recycled), and every kiro-family and routing-callback set. Each exclusion cites the reason, and the recurring one is that Track A holds the captures that would earn membership. |
-| 3 spawn path | Done — `acp/harness/muse.py`, a `CodexHarness`-shaped `MuseHarness` registered in `_HARNESSES`. TWO components (pi shape): the `muse-code-acp` adapter on the Node-entry ladder (`MUSE_CODE_ACP_BIN` override) and the `muse` host on the plain-binary ladder (`MUSE_CODE_EXECUTABLE` override, forwarded to the child), with a not-found message per half. No credential mask is resolved, because the harness is unenforced while dormant. |
-| 4 handshake | Done — `PROTOCOL_VERSION_MUSE`, its own literal, integer `1` (ACP v1). |
-| 5 auth declaration | Done — `own_credential_file`, `~/.config/muse/auth.json` on the floor with `XDG_CONFIG_HOME` re-anchored so the leaf keeps its two trailing segments under the override root (the two-segment shape goose has). `adapter_own_leaves` is empty, like claude's, because the harness is outside `tool_gate.ENFORCED_ROUTINGS` while unverified, so no mask is applied for a carve-out to spare a leaf from. Flips to naming that leaf when the routing is verified. |
-| 6 install probe | Done — `_probe_muse` names whichever of `muse-code-acp` and `muse` is absent. The adapter half's remedy is `npm i -g @bex-co/muse-code-acp`; the host half's is Meta's own installer, printed as text and never executed. |
-| 7 selectability | **Dormant**, named in `NOT_SHIPPED_SELECTABLE`. Its MCP projection is `no-channel` (`providers/mirrors/registry.py`), naming the `session/new` array as the channel it would use and a tracking anchor, because mounting Crew's servers on Muse 1.4.11 is not yet a measured round trip. |
-| routing | `UNVERIFIED`, which resolves INDETERMINATE and refuses, and which `register_selectable_backend` rejects. The mechanism it WILL use is `VERIFIED_SEEDED_SETTINGS`, goose's: MSP's `ApprovalMode` is a closed enum (`allowAll | promptUnmatched | onRequest | denyUnmatched`) and the `Session` object carries `approvalMode: EffectiveApprovalModeState`, so Crew would seed `promptUnmatched` at `session/start` and read the effective mode back before the first prompt. |
-| 8 live spill | Not reached. |
+| 1 vocabulary | Done — `ACP_BACKEND_MUSE = "muse"`, in `ACP_BACKENDS_KNOWN`, `PROVIDER_LABEL_MUSE = "Muse Code"`, policy name mapped, its own `muse` model-registry namespace. |
+| 2 capability sets | Decided for every set. IN `ACP_BACKENDS_ACP_RUNTIME` (the adapter multiplexes like codex), `ACP_BACKENDS_HARNESS_OWNED_SESSIONS` (MSP persists sessions and resolves a load/resume from the host-assigned id), and `ACP_BACKENDS_SESSION_MCP_ARRAY` (a stdio element in the `session/new` array mounted and its tool was called live). OUT of every other measured set — session sharing, eviction, the model/effort/advertised channels, every member-capability set, side read-only, both compaction sets (and context recycle — so it declines at the threshold and is logged, not recycled), and every kiro-family and routing-callback set. Each exclusion cites what is unmeasured, not the harness's status. |
+| 3 spawn path | Done — `acp/harness/muse.py`, a `CodexHarness`-shaped `MuseHarness` registered in `_HARNESSES`. TWO components (pi shape): the `muse-code-acp` adapter on the Node-entry ladder (`MUSE_CODE_ACP_BIN` override) and the `muse` host on the plain-binary ladder (`MUSE_CODE_EXECUTABLE` override, forwarded to the child), with a not-found message per half. `resolve_spawn` resolves the same OS credential mask codex does, through `resolve_spawn_masks(..., backend=ACP_BACKEND_MUSE)`. |
+| 4 handshake | Done — `PROTOCOL_VERSION_MUSE`, its own literal, integer `1` (ACP v1), confirmed by the live handshake capture. The client's `clientCapabilities` carry `_meta["muse/approval"] = 1`, the opt-in that makes the adapter advertise its seed seam. |
+| 5 auth declaration | Done — `own_credential_file`, `~/.config/muse/auth.json` on the floor with `XDG_CONFIG_HOME` re-anchored so the leaf keeps its two trailing segments under the override root (the two-segment shape goose has). `adapter_own_leaves = (".config/muse/auth.json",)` — the one leaf the mask gives back to the host, codex's shape. `signed_out_signature` carries the host's own text, captured on a signed-out run. |
+| 6 install probe | Done — `_probe_muse` names whichever of `muse-code-acp` and `muse` is absent. The adapter half's remedy is the npm install; the host half's is Meta's own installer, printed as text and never executed. |
+| 7 selectability | **Selectable**, in `BASELINE_SELECTABLE_BACKENDS`; `NOT_SHIPPED_SELECTABLE` is empty and records why Muse left it. MCP projection is a mirror onto the session array (`providers/mirrors/registry.py`, `ProjectionKind.MIRROR`), with the narrowed-server deny `WHOLE_SERVER` because the adapter's permission request carries only the flat tool name. |
+| routing | `VERIFIED_SEEDED_SETTINGS`, goose's mechanism, over TWO settings. Crew seeds both in `session/new`'s `_meta["muse/approval"] = {"policy": "promptUnmatched", "profile": ":ask-me"}` and the adapter reads both back in the SAME response's `configOptions` (`nativeApprovalPolicy`, `nativePermissionProfile`); `permission_settings_for(muse)` is the table, `seeded_setting_issue` refuses on either key absent or wrong, and the `config_option_update` tripwire fires on either changing. |
+| 8 live spill | The corpus under `test/fixtures/acp_frames/muse/` is live off Muse 1.4.11 through the fork adapter. |
 
-**Exactly what Track A must supply to flip each PARTIAL/dormant item, and what each flips:**
+**How each gap flipped — the measurement, and the address it moved:**
 
-1. **A handshake capture** against Muse 1.4.11 confirming the adapter answers
-   `protocolVersion: 1` — confirms Stage 4's literal (no change expected; a different
-   revision is the one line in `acp/harness/muse.py` that would move).
-2. **An approval-mode seed + read-back capture**: a `session/start` with
-   `approvalMode: promptUnmatched` whose returned `Session.approvalMode` reads it back
-   as `promptUnmatched` before the first prompt, and a `session/request_permission`
-   frame reaching the client for an unmatched tool call with a denial that stops the
-   command. This flips the routing from `Routing.UNVERIFIED` to
-   `Routing.VERIFIED_SEEDED_SETTINGS` with an `("approvalMode", "promptUnmatched")` row
-   in `ACP_BACKEND_PERMISSION_SETTING`, removes the `NOT_SHIPPED_SELECTABLE` entry, adds
-   Muse to `BASELINE_SELECTABLE_BACKENDS`, turns on enforcement (so
-   `resolve_spawn` resolves the credential mask and `adapter_own_leaves` becomes
-   `(".config/muse/auth.json",)`), and makes the enforced-host contract tests arm for
-   Muse rather than taking the dormant branch.
-3. **A `sessionMcp` mount round trip** on 1.4.11: pass a stdio MCP server in the ACP
-   `mcpServers` array and show the tool listed and callable. This flips the MCP
-   projection from `no-channel` to a `muse.py` mirror and adds Muse to
-   `ACP_BACKENDS_SESSION_MCP_ARRAY`, which in turn makes the member-dispatch/panel and
-   zero-tool-ban memberships reachable.
-4. **A teardown/resume-after-close capture**: show `session/close` evicts the session
-   and `session/resume` then restores the thread. This earns
-   `ACP_BACKENDS_SESSION_EVICTION` and `ACP_BACKENDS_SESSION_SHARING`.
-5. **Muse's own signed-out error text** on 1.4.11, to fill
-   `signed_out_signature` in the auth declaration (left empty rather than guessed).
+1. **Approval-policy seed + read-back.** `session/new` with
+   `_meta["muse/approval"].policy = promptUnmatched` read back as
+   `configOptions[nativeApprovalPolicy].currentValue` in the same response; a shell
+   command drew a live `session/request_permission` and `abort` left the call `failed`
+   with no completed execute. This moved the routing row to `VERIFIED_SEEDED_SETTINGS`
+   with `("nativeApprovalPolicy", "promptUnmatched")` in `ACP_BACKEND_PERMISSION_SETTING`,
+   turned on enforcement (the credential mask, `adapter_own_leaves`), and added the
+   `SessionExtras.session_meta` seam so a harness can put per-session `_meta` on the
+   wire with no backend branch in the runtime.
+2. **The MCP gate — the reason the first flip was NOT enough.** The same live run
+   showed a session-mounted MCP tool call resolved `resolvedBy: llmJudge` with NO
+   permission request: under Muse's default permission profile (Auto-review) its
+   built-in reviewer clears "prompt-bound" calls, and MCP calls are that class. Crew's
+   own tools would have run under Muse's judge rather than Crew's gate, hooks and
+   audit, so Muse stayed in `NOT_SHIPPED_SELECTABLE` with exactly that reason. The fix
+   was on the wire: MSP's stable `session/start.permissionProfile` selects a catalog
+   profile, `permissionProfile/list` on 1.4.11 serves `:ask-me` (reviewer authority
+   `human`, available), and the host commits it as `Session.permissionState.profileId`.
+   The adapter took the profile beside the policy in the same `_meta` envelope,
+   passed it with `requirePermissionProfile` (a committed profile that differs from
+   the requested one REFUSES the turn — never the host default silently), and read it
+   back as `nativePermissionProfile`. Crew's table grew a second pair
+   (`ACP_BACKEND_PERMISSION_SETTING_EXTRA[muse] = (("nativePermissionProfile",
+   ":ask-me"),)`, one named constant `MUSE_ASK_ME_PROFILE_ID`), and the re-captured
+   `mcp-stdio-mount-live.jsonl` shows the MCP call drawing the permission request and
+   the deny failing it. That removed Muse from `NOT_SHIPPED_SELECTABLE` and added it to
+   `BASELINE_SELECTABLE_BACKENDS`.
+3. **`sessionMcp` mount round trip.** A stdio MCP server in the ACP `mcpServers`
+   array was listed and its tool called with the marker returned. This moved the
+   projection from `no-channel` to a `MuseMirror` and added Muse to
+   `ACP_BACKENDS_SESSION_MCP_ARRAY`, with `drop_unadvertised_transports` narrowing on
+   the real `session/new` path. Muse is deliberately NOT in
+   `ACP_BACKENDS_PRUNE_UNSTARTABLE_MCP`: that prune runs only on the `AcpClient` path
+   and Muse is served by `AcpRuntime`, so joining would declare an enforcement that
+   never executes; the `mode:"required"` hazard is a documented residual.
 
-The lesson this run carries: dormant is a NAMED stage, not an incomplete one. Every
-gap above has an address — a set, a routing row, a projection kind, a declaration
-field — so the day Track A lands its captures, flipping Muse to selectable is a
-bounded edit at each of those addresses rather than a re-litigation of the design.
+**Still unmeasured, each with its address:** a teardown/resume-after-close capture
+(`ACP_BACKENDS_SESSION_EVICTION`, `ACP_BACKENDS_SESSION_SHARING`); the adapter's model
+`configOptions` driven (`ACP_BACKENDS_MODEL_VIA_CONFIG_OPTION`); `turn/steer` and a
+deny-notice capability (`ACP_BACKENDS_STEER`, `ACP_BACKENDS_STEERING_REQUEST`);
+`session/compact` driven through `scripts/capture_acp_compaction.py`
+(`ACP_BACKENDS_COMPACT`, `ACP_BACKENDS_CONTEXT_RECYCLE`); a projection from a SAVED
+member spec confirmed live (`ACP_BACKENDS_MEMBER_CAPABILITIES`). None of these gate
+selectability; each is one entry when its capture lands.
 
-**Update — the permission seam is now TWO settings, and the MCP gate is why.** The
-approval POLICY (`nativeApprovalPolicy = promptUnmatched`) makes the host's own shell
-tool prompt, and the live corpus proves it does. It does NOT make a session-mounted
-MCP tool call prompt: under Muse's default permission profile (Auto-review) the
-built-in reviewer clears the MCP call (`resolvedBy: llmJudge`) with no
-`session/request_permission` reaching the client (`reports/corpus-REPORT.md`).
-Selecting the **Ask me** profile (reviewer authority `human`) is what routes MCP
-calls to the client too. So Crew now seeds BOTH settings and requires BOTH read back:
+Two facts about the host worth knowing before reading the corpus. The permission
+options under Ask-me are four: `allow_once` (kind `allow_once`), `allow_session`
+(kind `allow_always`), `allow_local_mcp_tool` (kind `reject_always` — the adapter maps
+a locally-persistent policy amendment to that kind; Crew's reject path prefers kind
+`reject_once`, so this never selects it as a deny), and `abort` (kind `reject_once`).
+And the read-back's `currentValue` at `session/new` is the seeded request: the host
+starts lazily at the first turn, which is where the adapter proves the committed
+profile matches and refuses otherwise, and where a later change arrives as
+`session/permissionProfileChanged` → `config_option_update` for the tripwire.
 
-- `ACP_BACKEND_PERMISSION_SETTING[muse]` keeps its primary pair
-  `("nativeApprovalPolicy", "promptUnmatched")` (single-key callers read it unchanged),
-  and `ACP_BACKEND_PERMISSION_SETTING_EXTRA[muse]` adds
-  `(("nativePermissionProfile", ":ask-me"),)`. `permission_settings_for(muse)` returns
-  both, policy first. The Ask-me id is one named constant `MUSE_ASK_ME_PROFILE_ID`
-  (`:ask-me`), a one-line change once Track A confirms it live.
-- `_approval_seed()` sends `_meta["muse/approval"] = {"policy": ..., "profile": ...}`;
-  `seeded_setting_readback` returns `{setting_key: value|None}`; `seeded_setting_issue`
-  refuses if EITHER key is absent or wrong; the tripwire fires on EITHER changing.
-
-What is STILL required to flip `NOT_SHIPPED_SELECTABLE` (the parent's integration
-step, not this seam's): the fork adapter must implement the profile half of the wire
-contract (`session/start.permissionProfile` + `requirePermissionProfile`, and report
-`nativePermissionProfile` back in `configOptions`), AND the integration corpus under
-`test/fixtures/acp_frames/muse/` must capture an MCP tool call drawing a real
-`session/request_permission` under Ask-me with a denial that fails the call. Until
-both exist, Muse stays dormant.
+The lesson this run carries: dormant is a NAMED stage, not an incomplete one, and
+leaving it is a sequence of measurements, not one. The first measurement here (the
+shell path prompts) would have been enough to ship a harness whose MCP tools bypassed
+Crew's gate; the corpus README stating what the capture did NOT show is what caught
+it. Record the negative result beside the positive one, and the next flip has its
+address too.

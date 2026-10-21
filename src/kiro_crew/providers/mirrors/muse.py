@@ -212,20 +212,21 @@ class MuseMirror(AgentConfigMirror):
             Concern.AUTO_APPROVE: Ruling(
                 _D.WITHHELD,
                 "Muse's approval granularity is a session-level nativeApprovalPolicy "
-                "(allowAll | promptUnmatched | onRequest | denyUnmatched), not a "
-                "per-tool value, and the only policy Crew seeds is promptUnmatched -- "
-                "the one that asks. An auto-approve projection would have to name "
-                "allowAll, which suppresses the session/request_permission frames the "
-                "host gate is reached through. MEASURED RESIDUAL, stated rather than "
-                "glossed: under promptUnmatched on 1.4.11 a session-mounted MCP tool "
-                "call drew NO permission request -- Muse's default permission profile "
-                "(:auto-review) lets its built-in approval judge clear prompt-bound "
-                "calls, and the MCP call was resolved by that judge "
-                "(test/fixtures/acp_frames/muse/mcp-stdio-mount-live.jsonl). So today "
-                "an MCP call reaches Muse's judge, not Crew's gate; the fix is "
-                "selecting the :ask-me profile on the wire (session/start."
-                "permissionProfile), which the adapter does not expose yet, and the "
-                "harness is not selectable until it does",
+                "(allowAll | promptUnmatched | onRequest | denyUnmatched) plus a "
+                "session-level permission profile, not a per-tool value, and the only "
+                "pair Crew seeds is promptUnmatched + :ask-me -- the pair that asks. An "
+                "auto-approve projection would have to name allowAll or the "
+                ":auto-review profile, either of which suppresses the "
+                "session/request_permission frames the host gate is reached through. "
+                "MEASURED, stated rather than glossed: under promptUnmatched alone on "
+                "1.4.11 a session-mounted MCP tool call drew NO permission request -- "
+                "the host's default :auto-review profile lets its built-in approval "
+                "judge clear prompt-bound calls -- which is WHY the profile is seeded "
+                "beside the policy; under :ask-me the same MCP call draws the request "
+                "and the deny fails it "
+                "(test/fixtures/acp_frames/muse/mcp-stdio-mount-live.jsonl). A "
+                "projection that could set either half back to the permissive value "
+                "would reopen that gap, so nothing here touches them",
             ),
             Concern.MODEL: Ruling(
                 _D.DELIVERED,
