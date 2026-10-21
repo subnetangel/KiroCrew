@@ -45,6 +45,7 @@ from kiro_crew.providers.mirrors.claude_code import ClaudeCodeMirror
 from kiro_crew.providers.mirrors.codex import CodexMirror
 from kiro_crew.providers.mirrors.deepseek import DeepSeekMirror
 from kiro_crew.providers.mirrors.goose import GooseMirror
+from kiro_crew.providers.mirrors.muse import MuseMirror
 from kiro_crew.providers.mirrors.opencode import OpenCodeMirror
 
 
@@ -223,6 +224,7 @@ MIRRORS: dict[str, type[AgentConfigMirror]] = {
     ACP_BACKEND_OPENCODE: OpenCodeMirror,
     ACP_BACKEND_GOOSE: GooseMirror,
     ACP_BACKEND_DEEPSEEK: DeepSeekMirror,
+    ACP_BACKEND_MUSE: MuseMirror,
 }
 
 #: Every backend this build can spell, and how its MCP surface is reached.
@@ -379,27 +381,45 @@ PROJECTIONS: dict[str, McpProjection] = {
         per_tool_deny=PerToolDeny.WHOLE_SERVER,
     ),
     ACP_BACKEND_MUSE: McpProjection(
-        kind=ProjectionKind.NO_CHANNEL,
+        kind=ProjectionKind.MIRROR,
         reason=(
-            "Muse is dormant (Routing.UNVERIFIED), and its MCP channel is unproven for "
-            "the same reason its routing is. MSP's initialize can grant a sessionMcp "
-            "capability, and the ACP adapter would carry Crew's servers in the "
-            "session/new array like codex -- but whether this host's muse serve (1.4.11) "
-            "GRANTS sessionMcp and actually mounts a stdio server passed in that array "
-            "has not been driven (Track A holds the live captures). Declaring a channel "
-            "on the MSP schema alone would be the exact codex/opencode mistake this "
-            "folder's README narrates: a channel claimed on an advertisement rather than "
-            "a round trip. So this is no-channel, named rather than implied, until a "
-            "measured mount earns the mirror. It is also not selectable "
-            "(NOT_SHIPPED_SELECTABLE), so no session holds this gap yet."
+            "muse.py -- the wire face alone, and the third single-binary spec harness "
+            "to carry a session array. Crew writes no Muse config file: the adapter "
+            "(@bex-co/muse-code-acp) merges Crew's session/new array into its OWN "
+            "private per-session XDG overlay (muse-code-acp/src/mcp-overlay.ts "
+            "createMuseMcpOverlay), so the session/new array is this backend's whole "
+            "MCP channel. Its initialize advertises mcpCapabilities of http with no "
+            "stdio flag, the same absence-of-an-impossible-field non-evidence recorded "
+            "for opencode, goose and deepseek: ACP's McpCapabilities schema names only "
+            "the optional transports and stdio is the v1 baseline. Rather than infer "
+            "either way this was driven end to end against this host's Muse 1.4.11 "
+            "(Track A, muse-code-ref/reports/trackA-REPORT.md §2b): the element "
+            "acp.session_mcp.acp_server_element already emits is accepted, merged into "
+            "the overlay with mode:required, listed by the model and CALLED -- "
+            "mcp__probeping__ping returned pong and the turn ended end_turn -- so the "
+            "transport is mounted, the tool is enumerated and it is REACHABLE. One "
+            "hazard rides along, the same fail-closed shape deepseek has: the adapter "
+            "stamps every Crew-supplied session server mode:required (mcp-overlay.ts), "
+            "so an element whose command cannot start fails the WHOLE turn rather than "
+            "being dropped. Crew does NOT prune it, matching codex (the same "
+            "runtime-served, mode-enforced shape): the prune runs only on AcpClient "
+            "call sites and Muse is served by AcpRuntime "
+            "(ACP_BACKENDS_ACP_RUNTIME), so it is deliberately out of "
+            "ACP_BACKENDS_PRUNE_UNSTARTABLE_MCP -- a runtime-path prune is the fix "
+            "when one is wanted and does not exist yet"
         ),
-        channel=(
-            "the session/new mcpServers array, once a live round trip proves the 1.4.11 "
-            "muse serve host grants sessionMcp and mounts a stdio element passed in it "
-            "-- at which point Muse joins ACP_BACKENDS_SESSION_MCP_ARRAY and gets a "
-            "muse.py mirror, codex-shaped"
-        ),
-        tracking="docs/request-for-change/rfc-agent-config-mirror.md#5-migration",
+        # WHOLE-SERVER, proven from the adapter source rather than assumed. Muse's
+        # session/request_permission carries only the flat MSP toolName string and the
+        # model-authored rawInput (muse-code-acp/src/muse-permissions.ts
+        # approvalToPermissionRequest), with no structured (server, tool) identity and
+        # no _meta field naming the MCP server -- so there is nothing a per-call
+        # refusal could key on. The mcp__<server>__<tool> string Track A saw is the
+        # host-formed display name on the tool_call frame, not an identity Crew
+        # consumes; scraping it would be below goose's own 'trust only the structured
+        # _meta pair' bar, which Muse does not offer. A narrowed server is therefore
+        # withheld whole, Crew's own control plane included
+        # (providers/mirrors/muse.py::muse_projection).
+        per_tool_deny=PerToolDeny.WHOLE_SERVER,
     ),
 }
 

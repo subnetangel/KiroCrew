@@ -63,6 +63,7 @@ from kiro_crew.acp.types import (
     METHOD_SESSION_CLOSE,
     METHOD_SESSION_UPDATE,
 )
+from kiro_crew.providers.mirrors.codex import drop_unadvertised_transports
 
 __all__ = ["PROTOCOL_VERSION_MUSE", "MuseHarness"]
 
@@ -200,17 +201,33 @@ class MuseHarness(MembershipHarness):
         *,
         agent_capabilities: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        """Pass the requested array through unchanged.
+        """Drop the elements whose transport THIS session's adapter did not advertise.
 
-        Muse is OUT of ``ACP_BACKENDS_SESSION_MCP_ARRAY`` (its projection is
-        ``no-channel`` pending a 1.4.11 ``sessionMcp`` round-trip from Track A), so
-        Crew composes no servers for it and ``requested`` is already empty on the
-        runtime path. Returning it unchanged is a pure pass-through: there is no
-        advertised transport to narrow against, and narrowing an empty list would be
-        a no-op either way. When Track A proves the mount this harness joins the array
-        set and this method narrows against ``agent_capabilities`` like codex's.
+        Muse is IN ``ACP_BACKENDS_SESSION_MCP_ARRAY`` (its channel is proven on 1.4.11
+        by Track A §2b -- a stdio element passed in the ``session/new`` array was
+        merged into the adapter's overlay and called), so Crew composes the array
+        through ``providers/mirrors/muse.py`` and this method narrows it exactly as
+        ``CodexHarness.session_mcp_servers`` does, with the SAME shared filter
+        (``drop_unadvertised_transports``).
+
+        Narrowed at session start rather than when the array was built, for a timing
+        reason: the array is assembled on the spawn path, before the adapter process
+        exists, while the transports it accepts are unknown until ``initialize``
+        answers. Reading them here uses what this session was told, and stays a pure
+        in-memory pass.
+
+        An UNKNOWN handshake passes the array through untouched -- an absent
+        ``agentCapabilities``, an absent ``mcpCapabilities``, or one that is not a
+        mapping. Narrowing to nothing there would strip every tool from every session
+        on a host that simply did not say. Stdio is exempt (ACP's baseline), so the
+        stdio elements Crew actually emits are kept; Muse 1.4.11 advertises
+        ``mcpCapabilities: {"http": true}`` with no stdio flag, which this filter
+        reads correctly as full stdio support (Track A §2a).
         """
-        return requested
+        advertised = agent_capabilities.get("mcpCapabilities")
+        if not isinstance(advertised, dict) or not advertised:
+            return requested
+        return drop_unadvertised_transports(list(requested), dict(advertised))
 
     @property
     def wants_session_file_on_load(self) -> bool:

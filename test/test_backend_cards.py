@@ -366,11 +366,14 @@ def test_core_counts_per_harness_are_pinned() -> None:
         "goose": 7,
         "kas": 7,
         "kiro": 6,
-        # Muse lands dormant, so no core capability is AVAILABLE yet: its routing is
-        # unverified and every user-facing line (session control, tools, read-only
-        # side chat, ...) is gated on the verification Track A still owes. The count
-        # climbs as those flip; 0 is the honest dormant reading.
-        "muse": 0,
+        # Muse lands dormant, so its user-facing lines (session control, read-only
+        # side chat, ...) are still gated on the verification Track A owes -- EXCEPT
+        # crew_tools, which reads the MCP projection and is now AVAILABLE: Track A §2b
+        # proved the session/new array mounts a stdio server on 1.4.11, so Muse's
+        # projection is a mirror (providers/mirrors/muse.py) with a real channel. The
+        # count climbs from there as the routing flips; 1 is the honest reading of a
+        # dormant harness whose MCP channel alone is measured.
+        "muse": 1,
         "opencode": 6,
         "pi": 5,
     }
