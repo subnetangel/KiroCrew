@@ -55,6 +55,7 @@ from kiro_crew.acp_backends import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
     ACP_BACKENDS_COMPACT,
@@ -246,8 +247,16 @@ class TestEveryKnownBackendIsClassified:
     """
 
     #: Known backends deliberately outside all three compaction sets, each with why.
-    #: Empty: every known backend is classified.
-    UNCLASSIFIED: frozenset = frozenset()
+    #:
+    #: ``muse``: MSP has a ``session/compact`` verb, but its turn shape is unobserved
+    #: and Crew does not hand a harness ``/compact`` on an unmeasured capability; it
+    #: is likewise out of ``ACP_BACKENDS_CONTEXT_RECYCLE`` because recycling a Muse
+    #: session was not measured either. So it declines at the threshold and the gate
+    #: logs the WARNING naming the missing decision -- the safe arm, chosen rather than
+    #: fallen into (``backends_turns.py``, the ``ACP_BACKENDS_COMPACT`` comment). It
+    #: leaves this set when ``scripts/capture_acp_compaction.py --harness muse`` shows
+    #: ``usage_update.used`` fall below its pre-compact peak.
+    UNCLASSIFIED: frozenset = frozenset({ACP_BACKEND_MUSE})
 
     def test_every_known_backend_is_classified_or_listed(self) -> None:
         classified = (

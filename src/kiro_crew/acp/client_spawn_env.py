@@ -318,8 +318,6 @@ def _resolve_muse_host_bin() -> tuple[str | None, str]:
     Crew forwards that same variable to the child, so setting it does not lose the
     operator's choice, it carries it.
     """
-    from kiro_crew.acp.client import augmented_path
-
     search_path = augmented_path(os.environ.get("PATH", ""))
     override = os.environ.get(_ENV_MUSE_CODE_EXECUTABLE)
     if override:
