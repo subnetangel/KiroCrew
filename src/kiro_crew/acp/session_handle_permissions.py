@@ -9,9 +9,9 @@ class binds it by name, so it reads and writes the session's own state on the in
 and a patch of the method on the class or on an instance reaches every caller.
 
 Instance fields written: ``_audit_tasks``, ``_permission_gate_events``,
-``_permission_options``.
+``_permission_options``, ``seeded_setting_lost``.
 
-Instance fields read: ``_config_options``, ``_runtime``, ``_session_id``,
+Instance fields read: ``_config_options``, ``_runtime``, ``_session_id``, ``_session_key``,
 ``_tool_call_cache_overflow``, ``_tool_call_diff_path``,
 ``_tool_call_harness_tool_name``, ``_tool_call_input_redacted``, ``_tool_call_inputs``,
 ``_tool_call_is_shell``, ``_tool_call_mcp_server``, ``_tool_call_raw_params``,
@@ -610,7 +610,7 @@ def _verify_seeded_setting_readback(self: AcpSessionHandle) -> None:
     the just-opened session see it.
     """
     backend = self._runtime.acp_backend
-    observed = self._runtime._harness.seeded_setting_readback(list(self._config_options))
+    observed = self._runtime.seeded_setting_readback(list(self._config_options))
     issue = acp_tool_gate.seeded_setting_issue(backend, _scrub_observed(observed))
     if not issue:
         setting_key, value = acp_tool_gate.permission_setting_for(backend)
@@ -651,7 +651,7 @@ def _tripwire_seeded_setting(self: AcpSessionHandle, config_options: list) -> No
     backend = self._runtime.acp_backend
     if acp_tool_gate.routing_for(backend) is not acp_tool_gate.Routing.VERIFIED_SEEDED_SETTINGS:
         return
-    observed = self._runtime._harness.seeded_setting_readback(list(config_options))
+    observed = self._runtime.seeded_setting_readback(list(config_options))
     issue = acp_tool_gate.seeded_setting_issue(backend, _scrub_observed(observed))
     if not issue:
         return

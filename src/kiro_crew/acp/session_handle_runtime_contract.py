@@ -272,6 +272,16 @@ class AcpRuntimeProtocol(Protocol):
 
     async def terminate_session(self, session_id: str) -> None: ...
 
+    def seeded_setting_readback(self, config_options: list[dict[str, Any]]) -> object:
+        """The harness's own answer for its seeded permission setting, or ``None``.
+
+        The handle asks the RUNTIME rather than the harness object because the
+        harness is the runtime's; the runtime forwards to its
+        ``HarnessAdapter.seeded_setting_readback``. Consulted only for a
+        ``VERIFIED_SEEDED_SETTINGS`` backend; ``None`` refuses.
+        """
+        ...
+
     def is_alive(self) -> bool: ...
 
     @property

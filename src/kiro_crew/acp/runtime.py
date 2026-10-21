@@ -3921,6 +3921,15 @@ class AcpRuntime:
         else:
             self._turn_active_sessions.discard(session_id)
 
+    def seeded_setting_readback(self, config_options: list[dict[str, Any]]) -> object:
+        """Forward the handle's read-back question to this runtime's harness.
+
+        One line, and deliberately a method on the runtime rather than a handle
+        reaching into ``_harness``: the handle's view of the runtime is the
+        ``AcpRuntimeProtocol`` contract, and the harness is this process's fact.
+        """
+        return self._harness.seeded_setting_readback(config_options)
+
     async def terminate_session(self, session_id: str) -> None:
         """Evict a session from kiro-cli (freeing its memory), then unregister locally.
 

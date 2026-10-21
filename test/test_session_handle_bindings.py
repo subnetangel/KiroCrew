@@ -190,10 +190,22 @@ _MEMBERS: dict[str, tuple[str, object, str, str]] = {
     "_tool_kind_cache_for_wire": ("function", False, "b7b9268c0112", "session_handle_updates"),
     "_track_metadata": ("function", False, "87459833bc5c", "session_handle_compaction"),
     "_track_prompt_usage": ("function", False, "c8d5c402278d", "session_handle_compaction"),
+    "_tripwire_seeded_setting": (
+        "function",
+        False,
+        "e11ec297367b",
+        "session_handle_permissions",
+    ),
     "_tripwire_spec_disabled_tool": (
         "function",
         False,
         "8e767352900b",
+        "session_handle_permissions",
+    ),
+    "_verify_seeded_setting_readback": (
+        "function",
+        False,
+        "b60c5fea256e",
         "session_handle_permissions",
     ),
     "_wait_for_response": ("function", True, "87f499e313b4", "session_handle_lifecycle"),

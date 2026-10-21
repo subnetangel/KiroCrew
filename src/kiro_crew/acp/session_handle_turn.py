@@ -25,7 +25,7 @@ Instance fields written: ``_abandoned_prompt_id``, ``_awaiting_permission``, ``_
 
 Instance fields read: ``_abandoned_steering``, ``_awaited_responses``,
 ``_mode_model_unjudged``, ``_queue``, ``_runtime``, ``_session_id``,
-``_steering_cancel_tasks``.
+``_steering_cancel_tasks``, ``seeded_setting_lost``.
 """
 
 from __future__ import annotations
