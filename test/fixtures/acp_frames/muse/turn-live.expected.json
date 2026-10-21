@@ -1,5 +1,30 @@
 [
   {
+    "agent_capabilities": {
+      "auth": {
+        "logout": {}
+      },
+      "loadSession": true,
+      "mcpCapabilities": {
+        "http": true
+      },
+      "promptCapabilities": {
+        "embeddedContext": true,
+        "image": true
+      },
+      "sessionCapabilities": {
+        "close": {},
+        "fork": {},
+        "list": {},
+        "resume": {}
+      }
+    },
+    "agent_version": "0.10.0-kirocrew.2",
+    "frame": "response",
+    "id": 1,
+    "protocol_version": 1
+  },
+  {
     "config_options": [
       {
         "category": "mode",
@@ -183,6 +208,20 @@
           }
         ],
         "type": "select"
+      },
+      {
+        "category": "safety",
+        "currentValue": ":ask-me",
+        "description": "The host permission profile selected for this session. Ask me attaches a human reviewer so session-mounted MCP tool calls draw a permission request; the host default (Auto-review) clears them without one. Proven at session start; a profile the catalog does not admit fails the session rather than falling back to the default.",
+        "id": "nativePermissionProfile",
+        "name": "Native permission profile",
+        "options": [
+          {
+            "name": ":ask-me",
+            "value": ":ask-me"
+          }
+        ],
+        "type": "select"
       }
     ],
     "frame": "response",
@@ -201,85 +240,26 @@
     "session_id": "muse-session-1"
   },
   {
-    "action": "update",
-    "events": [],
-    "frame": "session/update",
-    "session_update": "session_info_update"
-  },
-  {
-    "action": "update",
-    "events": [],
-    "frame": "session/update",
-    "session_update": "usage_update",
-    "usage": [
-      27848,
-      1007997
-    ],
-    "usage_cost": null
-  },
-  {
-    "action": "update",
-    "events": [
-      {
-        "kind": "text_chunk",
-        "text": "muse-wire-probe"
-      }
-    ],
-    "frame": "session/update",
-    "session_update": "agent_message_chunk",
-    "text_chunk": {
-      "text": "muse-wire-probe",
-      "thinking": false
-    }
-  },
-  {
-    "action": "update",
-    "events": [
-      {
-        "is_shell": true,
-        "kind": "tool_call",
-        "raw_tool_params": {
-          "command": "echo muse-wire-probe",
-          "description": "Run probe echo",
-          "sandbox_permissions": "require_escalated"
-        },
-        "title": "Run probe echo",
-        "tool_call_id": "muse-call-1",
-        "tool_input": "{\n  \"command\": \"echo muse-wire-probe\",\n  \"description\": \"Run probe echo\",\n  \"sandbox_permissions\": \"require_escalated\"\n}",
-        "tool_kind": "execute",
-        "wire_title": "Run probe echo"
-      }
-    ],
-    "frame": "session/update",
-    "session_update": "tool_call"
-  },
-  {
     "action": "permission",
     "events": [
       {
-        "is_shell": true,
         "kind": "permission_request",
-        "mcp_identity_trusted": true,
         "options": [
           {
             "id": "allow_once",
             "label": "Allow once"
           },
           {
+            "id": "allow_local_prefix",
+            "label": "Always allow in this workspace: echo ..."
+          },
+          {
             "id": "abort",
             "label": "Reject"
           }
         ],
-        "raw_params_trusted": true,
-        "raw_tool_params": {
-          "command": "echo muse-wire-probe",
-          "description": "Run probe echo",
-          "sandbox_permissions": "require_escalated"
-        },
-        "shell_classified": true,
-        "title": "Run probe echo",
+        "title": "Run shell probe",
         "tool_call_id": "muse-call-1",
-        "tool_input": "{\n  \"command\": \"echo muse-wire-probe\",\n  \"description\": \"Run probe echo\",\n  \"sandbox_permissions\": \"require_escalated\"\n}",
         "tool_kind": "execute"
       }
     ],
@@ -292,28 +272,58 @@
   },
   {
     "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "usage_update",
+    "usage": [
+      27638,
+      1007997
+    ],
+    "usage_cost": null
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "is_shell": true,
+        "kind": "tool_call",
+        "raw_tool_params": {
+          "command": "echo muse-shell-probe",
+          "description": "Run shell probe"
+        },
+        "title": "Run shell probe",
+        "tool_call_id": "muse-call-1",
+        "tool_input": "{\n  \"command\": \"echo muse-shell-probe\",\n  \"description\": \"Run shell probe\"\n}",
+        "tool_kind": "execute",
+        "wire_title": "Run shell probe"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call"
+  },
+  {
+    "action": "update",
     "events": [
       {
         "kind": "tool_result",
         "tool_call_id": "muse-call-1",
-        "tool_output": "muse-wire-probe\n",
-        "tool_output_bytes": 16,
-        "tool_output_digest": "80d07d63bf173ae58b1e672b59c4abd30e2eeabce26f96e5f6172a644f2c02ed",
+        "tool_output": "bwrap: Failed to make / slave: Operation not permitted\n",
+        "tool_output_bytes": 55,
+        "tool_output_digest": "5c9e72ab82f11fbfc55383f3d41a6c953476ca01f9fb1fed3aca747191940052",
         "tool_status": "in_progress"
       },
       {
         "is_shell": true,
         "kind": "tool_call_update",
         "raw_tool_params": {
-          "command": "echo muse-wire-probe",
-          "description": "Run probe echo",
-          "sandbox_permissions": "require_escalated"
+          "command": "echo muse-shell-probe",
+          "description": "Run shell probe"
         },
-        "title": "Run probe echo",
+        "title": "Run shell probe",
         "tool_call_id": "muse-call-1",
-        "tool_input": "{\n  \"command\": \"echo muse-wire-probe\",\n  \"description\": \"Run probe echo\",\n  \"sandbox_permissions\": \"require_escalated\"\n}",
+        "tool_input": "{\n  \"command\": \"echo muse-shell-probe\",\n  \"description\": \"Run shell probe\"\n}",
         "tool_kind": "execute",
-        "wire_title": "Run probe echo"
+        "wire_title": "Run shell probe"
       }
     ],
     "frame": "session/update",
@@ -325,29 +335,259 @@
       {
         "kind": "tool_result",
         "tool_call_id": "muse-call-1",
+        "tool_output": "bwrap: Failed to make / slave: Operation not permitted\n",
+        "tool_output_bytes": 55,
+        "tool_output_digest": "5c9e72ab82f11fbfc55383f3d41a6c953476ca01f9fb1fed3aca747191940052",
+        "tool_status": "in_progress"
+      },
+      {
+        "is_shell": true,
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "command": "echo muse-shell-probe",
+          "description": "Run shell probe"
+        },
+        "title": "Run shell probe",
+        "tool_call_id": "muse-call-1",
+        "tool_input": "{\n  \"command\": \"echo muse-shell-probe\",\n  \"description\": \"Run shell probe\"\n}",
+        "tool_kind": "execute",
+        "wire_title": "Run shell probe"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "muse-call-1",
+        "tool_output": "bwrap: Failed to make / slave: Operation not permitted\n",
+        "tool_output_bytes": 55,
+        "tool_output_digest": "5c9e72ab82f11fbfc55383f3d41a6c953476ca01f9fb1fed3aca747191940052",
+        "tool_status": "failed"
+      },
+      {
+        "is_shell": true,
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "command": "echo muse-shell-probe",
+          "description": "Run shell probe"
+        },
+        "title": "Run shell probe",
+        "tool_call_id": "muse-call-1",
+        "tool_input": "{\n  \"command\": \"echo muse-shell-probe\",\n  \"description\": \"Run shell probe\"\n}",
+        "tool_kind": "execute",
+        "wire_title": "Run shell probe"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "permission",
+    "events": [
+      {
+        "kind": "permission_request",
+        "options": [
+          {
+            "id": "allow_once",
+            "label": "Allow once"
+          },
+          {
+            "id": "abort",
+            "label": "Reject"
+          }
+        ],
+        "request_id": 1,
+        "title": "Retry probe escalated",
+        "tool_call_id": "muse-call-2",
+        "tool_kind": "execute"
+      }
+    ],
+    "frame": "session/request_permission",
+    "recorded_options": {
+      "always": "allow_once",
+      "once": "allow_once",
+      "reject": "abort"
+    }
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "usage_update",
+    "usage": [
+      27900,
+      1007997
+    ],
+    "usage_cost": null
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "is_shell": true,
+        "kind": "tool_call",
+        "raw_tool_params": {
+          "command": "echo muse-shell-probe",
+          "description": "Retry probe escalated",
+          "sandbox_permissions": "require_escalated"
+        },
+        "title": "Retry probe escalated",
+        "tool_call_id": "muse-call-2",
+        "tool_input": "{\n  \"command\": \"echo muse-shell-probe\",\n  \"description\": \"Retry probe escalated\",\n  \"sandbox_permissions\": \"require_escalated\"\n}",
+        "tool_kind": "execute",
+        "wire_title": "Retry probe escalated"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "muse-call-2",
+        "tool_output": "muse-shell-probe\n",
+        "tool_output_bytes": 17,
+        "tool_output_digest": "fc25c3471b883c96e64e1efba421e67e953fca0be850a3909c63ef720ff0806a",
+        "tool_status": "in_progress"
+      },
+      {
+        "is_shell": true,
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "command": "echo muse-shell-probe",
+          "description": "Retry probe escalated",
+          "sandbox_permissions": "require_escalated"
+        },
+        "title": "Retry probe escalated",
+        "tool_call_id": "muse-call-2",
+        "tool_input": "{\n  \"command\": \"echo muse-shell-probe\",\n  \"description\": \"Retry probe escalated\",\n  \"sandbox_permissions\": \"require_escalated\"\n}",
+        "tool_kind": "execute",
+        "wire_title": "Retry probe escalated"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "muse-call-2",
+        "tool_output": "muse-shell-probe\n",
+        "tool_output_bytes": 17,
+        "tool_output_digest": "fc25c3471b883c96e64e1efba421e67e953fca0be850a3909c63ef720ff0806a",
+        "tool_status": "in_progress"
+      },
+      {
+        "is_shell": true,
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "command": "echo muse-shell-probe",
+          "description": "Retry probe escalated",
+          "sandbox_permissions": "require_escalated"
+        },
+        "title": "Retry probe escalated",
+        "tool_call_id": "muse-call-2",
+        "tool_input": "{\n  \"command\": \"echo muse-shell-probe\",\n  \"description\": \"Retry probe escalated\",\n  \"sandbox_permissions\": \"require_escalated\"\n}",
+        "tool_kind": "execute",
+        "wire_title": "Retry probe escalated"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "muse-call-2",
         "tool_final": true,
-        "tool_output": "muse-wire-probe\n",
-        "tool_output_bytes": 16,
-        "tool_output_digest": "80d07d63bf173ae58b1e672b59c4abd30e2eeabce26f96e5f6172a644f2c02ed",
+        "tool_output": "muse-shell-probe\n",
+        "tool_output_bytes": 17,
+        "tool_output_digest": "fc25c3471b883c96e64e1efba421e67e953fca0be850a3909c63ef720ff0806a",
         "tool_status": "completed"
       },
       {
         "is_shell": true,
         "kind": "tool_call_update",
         "raw_tool_params": {
-          "command": "echo muse-wire-probe",
-          "description": "Run probe echo",
+          "command": "echo muse-shell-probe",
+          "description": "Retry probe escalated",
           "sandbox_permissions": "require_escalated"
         },
-        "title": "Run probe echo",
-        "tool_call_id": "muse-call-1",
-        "tool_input": "{\n  \"command\": \"echo muse-wire-probe\",\n  \"description\": \"Run probe echo\",\n  \"sandbox_permissions\": \"require_escalated\"\n}",
+        "title": "Retry probe escalated",
+        "tool_call_id": "muse-call-2",
+        "tool_input": "{\n  \"command\": \"echo muse-shell-probe\",\n  \"description\": \"Retry probe escalated\",\n  \"sandbox_permissions\": \"require_escalated\"\n}",
         "tool_kind": "execute",
-        "wire_title": "Run probe echo"
+        "wire_title": "Retry probe escalated"
       }
     ],
     "frame": "session/update",
     "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "text": "Command executed successfully"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": "Command executed successfully",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "text": ":\n\n```\n"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": ":\n\n```\n",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "text": "muse-shell-probe\n```"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": "muse-shell-probe\n```",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "usage_update",
+    "usage": [
+      28231,
+      1007997
+    ],
+    "usage_cost": null
   },
   {
     "frame": "response",
