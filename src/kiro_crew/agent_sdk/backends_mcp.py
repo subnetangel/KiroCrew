@@ -24,6 +24,7 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
 )
@@ -124,14 +125,30 @@ from kiro_crew.agent_sdk.backends import (
 # It reads no ``~/.kiro/agents/<name>.json``, so this array is the only channel Crew
 # has to it.
 #
-# muse is NOT a member yet, and this is the brief's own gate rather than a refusal:
-# whether the 1.4.11 ``muse serve`` host grants ``sessionMcp`` at MSP ``initialize``
-# and actually mounts a stdio server passed in the ACP ``mcpServers`` array is the
-# live question Track A is driving. Absent that round-trip capture, declaring
-# membership would be the exact codex/opencode mistake this set's comments narrate --
-# claiming a channel on an advertisement. So Muse's MCP projection is ``no-channel``
-# (named in ``providers/mirrors/registry.py``) until Track A proves the mount, at
-# which point this is one entry here plus a mirror.
+# muse is a member, on a ROUND TRIP against this host's Muse 1.4.11 through the fork
+# adapter ``@bex-co/muse-code-acp`` rather than on the advertisement -- the very
+# distinction this set's comments draw. Driven in Track A
+# (``muse-code-ref/reports/trackA-REPORT.md`` §2b): the element
+# ``acp.session_mcp.acp_server_element`` emits is passed in the ``session/new``
+# ``mcpServers`` array, the adapter merges it into its own private per-session XDG
+# overlay (``muse-code-acp/src/mcp-overlay.ts`` ``createMuseMcpOverlay``), and the
+# model CALLS it -- ``mcp__probeping__ping`` returned ``pong`` and the turn ended
+# ``end_turn``. Its ``initialize`` advertises ``mcpCapabilities: {"http": true}`` and
+# no stdio flag, the same absence-of-an-impossible-field non-evidence recorded for
+# opencode, goose and deepseek above: ACP's ``McpCapabilities`` names only the
+# OPTIONAL transports, stdio is the v1 baseline every agent serves. It reads no
+# ``~/.kiro/agents/<name>.json``, so this array is the only channel Crew has to it.
+#
+# One hazard rides along and it is the SAME fail-closed shape deepseek has: the
+# adapter stamps every Crew-supplied session server ``mode: "required"``
+# (``mcp-overlay.ts``), so an element whose command cannot start fails the WHOLE turn
+# rather than being dropped. Crew does NOT prune it the way it prunes goose and
+# deepseek, though, for the reason codex (the same runtime-served, mode-enforced
+# shape) is also absent from ``ACP_BACKENDS_PRUNE_UNSTARTABLE_MCP``: the prune
+# (``AcpClient._prune_unstartable_mcp``) runs only on ``AcpClient`` call sites, and
+# Muse is served by ``AcpRuntime`` (``ACP_BACKENDS_ACP_RUNTIME``, not
+# ``ACP_BACKENDS_ACP_CLIENT_SPAWNABLE``), so those sites are never reached for it.
+# Joining the set would declare an enforcement that does not run.
 ACP_BACKENDS_SESSION_MCP_ARRAY: FrozenSet[str] = frozenset(
     {
         ACP_BACKEND_CLAUDE,
@@ -140,6 +157,7 @@ ACP_BACKENDS_SESSION_MCP_ARRAY: FrozenSet[str] = frozenset(
         ACP_BACKEND_GOOSE,
         ACP_BACKEND_DEEPSEEK,
         ACP_BACKEND_PI,
+        ACP_BACKEND_MUSE,
     }
 )
 
@@ -327,6 +345,14 @@ ACP_BACKENDS_HONOR_ZERO_TOOL_BAN = frozenset(
 # deepseek fails the whole ``session/new`` over it
 # (``test/fixtures/acp_frames/deepseek/mcp-stdio-rollback-live.jsonl``). Both run on
 # ``AcpClient``, which is where the prune is applied.
+#
+# codex and muse are NOT members even though their adapters share the fatal shape
+# (codex refuses the whole ``session/new``; muse's ``mode: "required"`` element fails
+# the turn): both are served by ``AcpRuntime`` (``ACP_BACKENDS_ACP_RUNTIME``), not
+# ``AcpClient``, so the prune call sites never run for them and membership would
+# declare an enforcement that does not execute. A mirror-authored
+# ``acp.mcp_startable`` prune on the runtime path is the fix when one is wanted; it
+# does not exist yet, so neither backend claims it.
 ACP_BACKENDS_PRUNE_UNSTARTABLE_MCP = frozenset({ACP_BACKEND_GOOSE, ACP_BACKEND_DEEPSEEK})
 
 # Backends that read reasoning effort from the workspace ``cli.json`` overlay
