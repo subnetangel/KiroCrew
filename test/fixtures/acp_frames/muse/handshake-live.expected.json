@@ -19,7 +19,7 @@
         "resume": {}
       }
     },
-    "agent_version": "0.10.0-kirocrew.1",
+    "agent_version": "0.10.0-kirocrew.2",
     "frame": "response",
     "id": 1,
     "protocol_version": 1
@@ -205,6 +205,20 @@
           {
             "name": "disabled",
             "value": "disabled"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "category": "safety",
+        "currentValue": ":ask-me",
+        "description": "The host permission profile selected for this session. Ask me attaches a human reviewer so session-mounted MCP tool calls draw a permission request; the host default (Auto-review) clears them without one. Proven at session start; a profile the catalog does not admit fails the session rather than falling back to the default.",
+        "id": "nativePermissionProfile",
+        "name": "Native permission profile",
+        "options": [
+          {
+            "name": ":ask-me",
+            "value": ":ask-me"
           }
         ],
         "type": "select"

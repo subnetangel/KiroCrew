@@ -1,0 +1,356 @@
+[
+  {
+    "agent_capabilities": {
+      "auth": {
+        "logout": {}
+      },
+      "loadSession": true,
+      "mcpCapabilities": {
+        "http": true
+      },
+      "promptCapabilities": {
+        "embeddedContext": true,
+        "image": true
+      },
+      "sessionCapabilities": {
+        "close": {},
+        "fork": {},
+        "list": {},
+        "resume": {}
+      }
+    },
+    "agent_version": "0.10.0-kirocrew.2",
+    "frame": "response",
+    "id": 1,
+    "protocol_version": 1
+  },
+  {
+    "config_options": [
+      {
+        "category": "mode",
+        "currentValue": "default",
+        "id": "mode",
+        "name": "Mode",
+        "options": [
+          {
+            "description": "Tool calls that need approval are offered through ACP permission requests unless the independently configured native policy settles them. Applies from the next prompt.",
+            "name": "On request",
+            "value": "default"
+          },
+          {
+            "description": "Disable workspace file writes and shell execution for the run. Applies from the next prompt.",
+            "name": "Read-only",
+            "value": "readOnly"
+          },
+          {
+            "description": "Plan with workspace writes and shell execution disabled. Select another mode explicitly to implement. Applies from the next prompt.",
+            "name": "Plan",
+            "value": "plan"
+          },
+          {
+            "description": "Automatically select host-offered approved/once choices at each stage. No persistent grants; sandbox stays enabled unless separately changed. Applies from the next prompt.",
+            "name": "Auto-approve",
+            "value": "bypassApprovals"
+          },
+          {
+            "description": "Reject genuine pending prompts using host-offered denial choices. Known-safe tools may still run. Applies from the next prompt.",
+            "name": "Reject prompts",
+            "value": "rejectApprovals"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "category": "model",
+        "currentValue": "muse-spark-1.2",
+        "description": "Showing the current configured or restored model. Use /models to refresh choices before a turn; otherwise choices update when an execution host becomes ready.",
+        "id": "model",
+        "name": "Model",
+        "options": [
+          {
+            "name": "muse-spark-1.2",
+            "value": "muse-spark-1.2"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "category": "thought_level",
+        "currentValue": "high",
+        "description": "Requested effort only; effective mapping is unverified for this host. On Muse 1.3 and later, max is its own tier and ultra may be gated. Per-model restrictions are unavailable.",
+        "id": "reasoningEffort",
+        "name": "Reasoning effort",
+        "options": [
+          {
+            "name": "None",
+            "value": "none"
+          },
+          {
+            "name": "Minimal",
+            "value": "minimal"
+          },
+          {
+            "name": "Low",
+            "value": "low"
+          },
+          {
+            "name": "Medium",
+            "value": "medium"
+          },
+          {
+            "name": "High",
+            "value": "high"
+          },
+          {
+            "name": "Xhigh",
+            "value": "xhigh"
+          },
+          {
+            "name": "Max",
+            "value": "max"
+          },
+          {
+            "name": "Ultra",
+            "value": "ultra"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "currentValue": "promptUnmatched",
+        "description": "Requested Muse policy, separate from adapter automatic decisions. Non-default policies require verified Muse 1.2.1+ enforcement. Changes apply to the next idle host.",
+        "id": "nativeApprovalPolicy",
+        "name": "Native approval policy",
+        "options": [
+          {
+            "name": "onRequest",
+            "value": "onRequest"
+          },
+          {
+            "name": "promptUnmatched",
+            "value": "promptUnmatched"
+          },
+          {
+            "name": "denyUnmatched",
+            "value": "denyUnmatched"
+          },
+          {
+            "name": "allowAll",
+            "value": "allowAll"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "currentValue": "enabled",
+        "description": "Fixed for the host lifetime. Changing this setting replaces an idle host; it does not trust workspace rules or change approval decisions.",
+        "id": "sandbox",
+        "name": "OS sandbox",
+        "options": [
+          {
+            "name": "enabled",
+            "value": "enabled"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "currentValue": "proxy-only",
+        "description": "Fixed for the host lifetime. Changing this setting replaces an idle host; it does not trust workspace rules or change approval decisions.",
+        "id": "sandboxNetwork",
+        "name": "Sandbox network",
+        "options": [
+          {
+            "name": "proxy-only",
+            "value": "proxy-only"
+          },
+          {
+            "name": "restricted",
+            "value": "restricted"
+          },
+          {
+            "name": "enabled",
+            "value": "enabled"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "currentValue": "enabled",
+        "description": "Fixed for the host lifetime. Changing this setting replaces an idle host; it does not trust workspace rules or change approval decisions.",
+        "id": "workspaceWrite",
+        "name": "Non-shell workspace writes",
+        "options": [
+          {
+            "name": "enabled",
+            "value": "enabled"
+          },
+          {
+            "name": "disabled",
+            "value": "disabled"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "currentValue": "enabled",
+        "description": "Fixed for the host lifetime. Changing this setting replaces an idle host; it does not trust workspace rules or change approval decisions.",
+        "id": "shell",
+        "name": "Workspace shell",
+        "options": [
+          {
+            "name": "enabled",
+            "value": "enabled"
+          },
+          {
+            "name": "disabled",
+            "value": "disabled"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "category": "safety",
+        "currentValue": ":ask-me",
+        "description": "The host permission profile selected for this session. Ask me attaches a human reviewer so session-mounted MCP tool calls draw a permission request; the host default (Auto-review) clears them without one. Proven at session start; a profile the catalog does not admit fails the session rather than falling back to the default.",
+        "id": "nativePermissionProfile",
+        "name": "Native permission profile",
+        "options": [
+          {
+            "name": ":ask-me",
+            "value": ":ask-me"
+          }
+        ],
+        "type": "select"
+      }
+    ],
+    "frame": "response",
+    "id": 2,
+    "modes": {
+      "advertised": true,
+      "current": "default",
+      "ids": [
+        "default",
+        "readOnly",
+        "plan",
+        "bypassApprovals",
+        "rejectApprovals"
+      ]
+    },
+    "session_id": "muse-session-1"
+  },
+  {
+    "action": "permission",
+    "events": [
+      {
+        "kind": "permission_request",
+        "options": [
+          {
+            "id": "allow_once",
+            "label": "Allow once"
+          },
+          {
+            "id": "allow_session",
+            "label": "Allow for this session"
+          },
+          {
+            "id": "allow_local_mcp_tool",
+            "label": "Always allow this MCP tool"
+          },
+          {
+            "id": "abort",
+            "label": "Reject"
+          }
+        ],
+        "title": "mcp__crew_probe__crew_probe_echo",
+        "tool_call_id": "muse-call-1",
+        "tool_kind": "other"
+      }
+    ],
+    "frame": "session/request_permission",
+    "recorded_options": {
+      "always": "allow_session",
+      "once": "allow_once",
+      "reject": "abort"
+    }
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "usage_update",
+    "usage": [
+      27971,
+      1007997
+    ],
+    "usage_cost": null
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_call",
+        "title": "mcp__crew_probe__crew_probe_echo",
+        "tool_call_id": "muse-call-1",
+        "tool_kind": "other",
+        "wire_title": "mcp__crew_probe__crew_probe_echo"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "muse-call-1",
+        "tool_final": true,
+        "tool_output": "crew-stdio-mount-proved",
+        "tool_output_bytes": 23,
+        "tool_output_digest": "9f9748c9e18a42034c91e3b56ef3086e820bc06bf97a0a2b536addd6bdd43922",
+        "tool_status": "completed"
+      },
+      {
+        "kind": "tool_call_update",
+        "title": "mcp__crew_probe__crew_probe_echo",
+        "tool_call_id": "muse-call-1",
+        "tool_kind": "other",
+        "wire_title": "mcp__crew_probe__crew_probe_echo"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "text": "crew-stdio-mount-proved"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": "crew-stdio-mount-proved",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "usage_update",
+    "usage": [
+      27879,
+      1007997
+    ],
+    "usage_cost": null
+  },
+  {
+    "frame": "response",
+    "id": 3,
+    "stop_reason": "end_turn"
+  }
+]
