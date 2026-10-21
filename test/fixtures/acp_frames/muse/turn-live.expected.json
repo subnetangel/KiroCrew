@@ -1,0 +1,357 @@
+[
+  {
+    "config_options": [
+      {
+        "category": "mode",
+        "currentValue": "default",
+        "id": "mode",
+        "name": "Mode",
+        "options": [
+          {
+            "description": "Tool calls that need approval are offered through ACP permission requests unless the independently configured native policy settles them. Applies from the next prompt.",
+            "name": "On request",
+            "value": "default"
+          },
+          {
+            "description": "Disable workspace file writes and shell execution for the run. Applies from the next prompt.",
+            "name": "Read-only",
+            "value": "readOnly"
+          },
+          {
+            "description": "Plan with workspace writes and shell execution disabled. Select another mode explicitly to implement. Applies from the next prompt.",
+            "name": "Plan",
+            "value": "plan"
+          },
+          {
+            "description": "Automatically select host-offered approved/once choices at each stage. No persistent grants; sandbox stays enabled unless separately changed. Applies from the next prompt.",
+            "name": "Auto-approve",
+            "value": "bypassApprovals"
+          },
+          {
+            "description": "Reject genuine pending prompts using host-offered denial choices. Known-safe tools may still run. Applies from the next prompt.",
+            "name": "Reject prompts",
+            "value": "rejectApprovals"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "category": "model",
+        "currentValue": "muse-spark-1.2",
+        "description": "Showing the current configured or restored model. Use /models to refresh choices before a turn; otherwise choices update when an execution host becomes ready.",
+        "id": "model",
+        "name": "Model",
+        "options": [
+          {
+            "name": "muse-spark-1.2",
+            "value": "muse-spark-1.2"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "category": "thought_level",
+        "currentValue": "high",
+        "description": "Requested effort only; effective mapping is unverified for this host. On Muse 1.3 and later, max is its own tier and ultra may be gated. Per-model restrictions are unavailable.",
+        "id": "reasoningEffort",
+        "name": "Reasoning effort",
+        "options": [
+          {
+            "name": "None",
+            "value": "none"
+          },
+          {
+            "name": "Minimal",
+            "value": "minimal"
+          },
+          {
+            "name": "Low",
+            "value": "low"
+          },
+          {
+            "name": "Medium",
+            "value": "medium"
+          },
+          {
+            "name": "High",
+            "value": "high"
+          },
+          {
+            "name": "Xhigh",
+            "value": "xhigh"
+          },
+          {
+            "name": "Max",
+            "value": "max"
+          },
+          {
+            "name": "Ultra",
+            "value": "ultra"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "currentValue": "promptUnmatched",
+        "description": "Requested Muse policy, separate from adapter automatic decisions. Non-default policies require verified Muse 1.2.1+ enforcement. Changes apply to the next idle host.",
+        "id": "nativeApprovalPolicy",
+        "name": "Native approval policy",
+        "options": [
+          {
+            "name": "onRequest",
+            "value": "onRequest"
+          },
+          {
+            "name": "promptUnmatched",
+            "value": "promptUnmatched"
+          },
+          {
+            "name": "denyUnmatched",
+            "value": "denyUnmatched"
+          },
+          {
+            "name": "allowAll",
+            "value": "allowAll"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "currentValue": "enabled",
+        "description": "Fixed for the host lifetime. Changing this setting replaces an idle host; it does not trust workspace rules or change approval decisions.",
+        "id": "sandbox",
+        "name": "OS sandbox",
+        "options": [
+          {
+            "name": "enabled",
+            "value": "enabled"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "currentValue": "proxy-only",
+        "description": "Fixed for the host lifetime. Changing this setting replaces an idle host; it does not trust workspace rules or change approval decisions.",
+        "id": "sandboxNetwork",
+        "name": "Sandbox network",
+        "options": [
+          {
+            "name": "proxy-only",
+            "value": "proxy-only"
+          },
+          {
+            "name": "restricted",
+            "value": "restricted"
+          },
+          {
+            "name": "enabled",
+            "value": "enabled"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "currentValue": "enabled",
+        "description": "Fixed for the host lifetime. Changing this setting replaces an idle host; it does not trust workspace rules or change approval decisions.",
+        "id": "workspaceWrite",
+        "name": "Non-shell workspace writes",
+        "options": [
+          {
+            "name": "enabled",
+            "value": "enabled"
+          },
+          {
+            "name": "disabled",
+            "value": "disabled"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "currentValue": "enabled",
+        "description": "Fixed for the host lifetime. Changing this setting replaces an idle host; it does not trust workspace rules or change approval decisions.",
+        "id": "shell",
+        "name": "Workspace shell",
+        "options": [
+          {
+            "name": "enabled",
+            "value": "enabled"
+          },
+          {
+            "name": "disabled",
+            "value": "disabled"
+          }
+        ],
+        "type": "select"
+      }
+    ],
+    "frame": "response",
+    "id": 2,
+    "modes": {
+      "advertised": true,
+      "current": "default",
+      "ids": [
+        "default",
+        "readOnly",
+        "plan",
+        "bypassApprovals",
+        "rejectApprovals"
+      ]
+    },
+    "session_id": "muse-session-1"
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "session_info_update"
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "usage_update",
+    "usage": [
+      27848,
+      1007997
+    ],
+    "usage_cost": null
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "text": "muse-wire-probe"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": "muse-wire-probe",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "is_shell": true,
+        "kind": "tool_call",
+        "raw_tool_params": {
+          "command": "echo muse-wire-probe",
+          "description": "Run probe echo",
+          "sandbox_permissions": "require_escalated"
+        },
+        "title": "Run probe echo",
+        "tool_call_id": "muse-call-1",
+        "tool_input": "{\n  \"command\": \"echo muse-wire-probe\",\n  \"description\": \"Run probe echo\",\n  \"sandbox_permissions\": \"require_escalated\"\n}",
+        "tool_kind": "execute",
+        "wire_title": "Run probe echo"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call"
+  },
+  {
+    "action": "permission",
+    "events": [
+      {
+        "is_shell": true,
+        "kind": "permission_request",
+        "mcp_identity_trusted": true,
+        "options": [
+          {
+            "id": "allow_once",
+            "label": "Allow once"
+          },
+          {
+            "id": "abort",
+            "label": "Reject"
+          }
+        ],
+        "raw_params_trusted": true,
+        "raw_tool_params": {
+          "command": "echo muse-wire-probe",
+          "description": "Run probe echo",
+          "sandbox_permissions": "require_escalated"
+        },
+        "shell_classified": true,
+        "title": "Run probe echo",
+        "tool_call_id": "muse-call-1",
+        "tool_input": "{\n  \"command\": \"echo muse-wire-probe\",\n  \"description\": \"Run probe echo\",\n  \"sandbox_permissions\": \"require_escalated\"\n}",
+        "tool_kind": "execute"
+      }
+    ],
+    "frame": "session/request_permission",
+    "recorded_options": {
+      "always": "allow_once",
+      "once": "allow_once",
+      "reject": "abort"
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "muse-call-1",
+        "tool_output": "muse-wire-probe\n",
+        "tool_output_bytes": 16,
+        "tool_output_digest": "80d07d63bf173ae58b1e672b59c4abd30e2eeabce26f96e5f6172a644f2c02ed",
+        "tool_status": "in_progress"
+      },
+      {
+        "is_shell": true,
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "command": "echo muse-wire-probe",
+          "description": "Run probe echo",
+          "sandbox_permissions": "require_escalated"
+        },
+        "title": "Run probe echo",
+        "tool_call_id": "muse-call-1",
+        "tool_input": "{\n  \"command\": \"echo muse-wire-probe\",\n  \"description\": \"Run probe echo\",\n  \"sandbox_permissions\": \"require_escalated\"\n}",
+        "tool_kind": "execute",
+        "wire_title": "Run probe echo"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "muse-call-1",
+        "tool_final": true,
+        "tool_output": "muse-wire-probe\n",
+        "tool_output_bytes": 16,
+        "tool_output_digest": "80d07d63bf173ae58b1e672b59c4abd30e2eeabce26f96e5f6172a644f2c02ed",
+        "tool_status": "completed"
+      },
+      {
+        "is_shell": true,
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "command": "echo muse-wire-probe",
+          "description": "Run probe echo",
+          "sandbox_permissions": "require_escalated"
+        },
+        "title": "Run probe echo",
+        "tool_call_id": "muse-call-1",
+        "tool_input": "{\n  \"command\": \"echo muse-wire-probe\",\n  \"description\": \"Run probe echo\",\n  \"sandbox_permissions\": \"require_escalated\"\n}",
+        "tool_kind": "execute",
+        "wire_title": "Run probe echo"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "frame": "response",
+    "id": 3,
+    "stop_reason": "end_turn"
+  }
+]
