@@ -107,6 +107,7 @@ def build_session_new_params(
     mcp_servers: list[dict[str, Any]] | None = None,
     claude_meta: bool = False,
     kas_custom_agents: list[dict[str, Any]] | None = None,
+    session_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the params for a ``session/new`` request.
 
@@ -120,6 +121,11 @@ def build_session_new_params(
     agent is registered, surfaces as a mode, and can then be activated by the
     ordinary ``session/set_mode``. The two ``_meta`` envelopes belong to
     different backends, so they never both apply.
+
+    ``session_meta`` is a harness's own ``_meta`` keys (``SessionExtras.session_meta``),
+    merged beside the envelopes above rather than replacing them. ``None`` or
+    empty adds no key, so the request a host that needs nothing here sends is
+    unchanged byte for byte.
     """
     params: dict[str, Any] = {
         "cwd": str(cwd),
@@ -129,7 +135,27 @@ def build_session_new_params(
         params["_meta"] = {"claudeCode": {"options": {}}}
     if kas_custom_agents:
         attach_kas_custom_agents(params, kas_custom_agents)
+    if session_meta:
+        attach_session_meta(params, session_meta)
     return params
+
+
+def attach_session_meta(params: dict[str, Any], session_meta: dict[str, Any] | None) -> None:
+    """Merge a harness's own keys into the request's ``_meta`` envelope.
+
+    Shared by ``session/new`` and ``session/load`` for the reason
+    :func:`attach_kas_custom_agents` is: one owner for the nesting. Merges key by
+    key into any existing envelope and never replaces it, so a harness key cannot
+    shadow the transcript-path or KAS keys another writer put there, and they
+    cannot shadow it. An empty mapping is a no-op.
+    """
+    if not session_meta:
+        return
+    meta = params.get("_meta")
+    if not isinstance(meta, dict):
+        meta = {}
+        params["_meta"] = meta
+    meta.update(session_meta)
 
 
 def attach_kas_custom_agents(

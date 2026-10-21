@@ -273,6 +273,19 @@ class SessionExtras:
     nothing, or takes its agent at spawn time.
     """
 
+    session_meta: dict[str, Any] | None = None
+    """Keys this host needs in the ``session/new`` request's ``_meta`` envelope.
+
+    ``None`` -- the normal answer -- sends the request exactly as before, so a
+    host that needs nothing here puts nothing on the wire and the kiro path is
+    byte-identical. A host that routes its permission gate through a value the
+    adapter takes at session CREATION (``Routing.VERIFIED_SEEDED_SETTINGS`` on the
+    runtime driver) names that value here, and the shared builder merges it
+    under ``_meta`` beside whatever the other envelopes carry. Merged, not
+    assigned, so two hosts' envelopes can never shadow each other -- the same
+    rule ``attach_kas_custom_agents`` follows for its own key.
+    """
+
 
 # ── Seam 5: notification aliases ──
 
@@ -580,6 +593,24 @@ class HarnessAdapter(LaunchAdapter):
         and the Kiro path gains no branch. A wire-registered host overrides it
         to read what the engine did with the definition it was sent. The string
         returned is the user-facing refusal, ready to raise as-is.
+        """
+        return None
+
+    def seeded_setting_readback(self, config_options: list[dict[str, Any]]) -> object:
+        """What this host's OWN resolved configuration says the seeded setting is.
+
+        Consulted ONLY for a host whose routing is
+        :data:`~kiro_crew.agent_sdk.backends.Routing.VERIFIED_SEEDED_SETTINGS`,
+        after ``session/new`` or ``session/load`` and before the first prompt. The
+        answer is handed to ``acp_tool_gate.seeded_setting_issue`` as the
+        observation: the value the harness reports for the setting Crew supplied,
+        or ``None`` when its response does not carry one. *config_options* is the
+        ``configOptions`` list the response carried, already stored on the handle.
+
+        The base answer is ``None``, and ``None`` REFUSES: a routed host that forgot
+        to override this reads as "the harness's own resolved configuration does
+        not carry the setting", which is the fail-closed direction. A host on any
+        other routing is never asked, so the kiro path gains no call (H13).
         """
         return None
 

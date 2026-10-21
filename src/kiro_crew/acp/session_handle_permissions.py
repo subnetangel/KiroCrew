@@ -509,7 +509,7 @@ def _audit_handle_reject(
 
 
 async def apply_session_permission_routing(self: AcpSessionHandle) -> None:
-    """Make a ``SESSION_CONFIG`` harness actually ask, or refuse to run it.
+    """Make a ``SESSION_CONFIG`` or ``VERIFIED_SEEDED_SETTINGS`` harness actually ask, or refuse to run it.
 
     Self-gating on the harness's routing mechanism, so it is inert for every
     harness whose privileged tools are made to ask some other way: kiro-cli
@@ -517,18 +517,32 @@ async def apply_session_permission_routing(self: AcpSessionHandle) -> None:
     (``Routing.AGENT_SPEC``), so the body below never runs for them and
     neither backend sends an extra write.
 
-    Two outcomes, and each is a different verdict on purpose:
+    Two mechanisms are armed here, and they differ in which half runs on this
+    response:
 
-    * the option was not advertised -> ``INDETERMINATE``, because Crew cannot
+    * ``SESSION_CONFIG`` -- the response ADVERTISED an option; this call WRITES
+      the required value. Two outcomes, each a different verdict on purpose:
+      the option was not advertised -> ``INDETERMINATE``, because Crew cannot
       tell what the adapter will do, and "cannot tell" must not read as armed;
-    * the write was rejected -> ``BYPASSED``, an observed failure rather than
+      the write was rejected -> ``BYPASSED``, an observed failure rather than
       missing evidence.
+    * ``VERIFIED_SEEDED_SETTINGS`` -- the value was SUPPLIED as the session was
+      created (``SessionExtras.session_meta``); this call READS it back out of
+      the harness's own resolved configuration on the same response, through
+      the harness's ``seeded_setting_readback`` seam, and refuses when it is not
+      the required one. Nothing is written: a value that did not take, or that
+      something above the seed overrode, is observed rather than corrected, so
+      the refusal names a precedence problem the operator can act on.
 
     Only the enforced mechanisms refuse, and ``enforce_runtime_routing`` owns
     that decision, so the scope is not re-derived here.
     """
     backend = self._runtime.acp_backend
-    if acp_tool_gate.routing_for(backend) is not acp_tool_gate.Routing.SESSION_CONFIG:
+    routing = acp_tool_gate.routing_for(backend)
+    if routing is acp_tool_gate.Routing.VERIFIED_SEEDED_SETTINGS:
+        self._verify_seeded_setting_readback()
+        return
+    if routing is not acp_tool_gate.Routing.SESSION_CONFIG:
         return
     if self.mirror_used and self._runtime._member_projection_needs_confirmation(self.mirror_used):
         await self._runtime._confirm_member_projection(self)
@@ -571,6 +585,124 @@ async def apply_session_permission_routing(self: AcpSessionHandle) -> None:
         value,
         acp_tool_gate.label_for(backend),
     )
+
+
+def _verify_seeded_setting_readback(self: AcpSessionHandle) -> None:
+    """Read this harness's OWN resolved setting back off the session response.
+
+    The half that makes ``VERIFIED_SEEDED_SETTINGS`` verified rather than seeded,
+    on the runtime driver. The harness answers through ``seeded_setting_readback``
+    from the ``configOptions`` the response carried (already stored by
+    ``store_session_config``), and ``acp_tool_gate.seeded_setting_issue`` decides.
+    The observation is scrubbed before it can travel into a refusal, like every
+    other backend-sourced string that reaches the dashboard.
+
+    Called on BOTH session-start paths, and the restore path needs it most: the
+    seed governs a session the adapter CREATES, while a restored session carries
+    whatever policy it was last left in, and only this read can tell.
+
+    What it does NOT establish is that the harness honours the policy per tool
+    call; that is the harness's own contract, and the frame corpus carries the
+    observation of the emission.
+
+    Raises ``AcpToolGateUnroutable`` when the required value is not in force --
+    the ACP-layer type, so the session-start callers that catch it to terminate
+    the just-opened session see it.
+    """
+    backend = self._runtime.acp_backend
+    observed = self._runtime._harness.seeded_setting_readback(list(self._config_options))
+    issue = acp_tool_gate.seeded_setting_issue(backend, _scrub_observed(observed))
+    if not issue:
+        setting_key, value = acp_tool_gate.permission_setting_for(backend)
+        logger.info(
+            "ACP permission route verified: %s=%s read back from the session (%s)",
+            setting_key,
+            value,
+            acp_tool_gate.label_for(backend),
+        )
+        return
+    try:
+        acp_tool_gate.enforce_runtime_routing(
+            backend,
+            issue,
+            verdict=acp_tool_gate.Verdict.INDETERMINATE,
+            remedy=acp_tool_gate.remediation_for(backend),
+        )
+    except acp_tool_gate.ToolGateUnroutable as exc:
+        raise AcpToolGateUnroutable(str(exc)) from None
+
+
+def _tripwire_seeded_setting(self: AcpSessionHandle, config_options: list) -> None:
+    """Stop a routed session that reports leaving its required setting mid-session.
+
+    The read-back at session start proves the setting the session STARTED with. It
+    does not hold the session there: an adapter that lets the setting change
+    reports the new value as a ``config_option_update``, and that frame is the last
+    one Crew sees before the harness stops asking. So the same read runs on every
+    such frame, gated on the routing table rather than a backend id (H13), and a
+    frame that no longer reads the required value ends the session: the handle
+    is marked, the loss is audited, and the session is evicted from the shared
+    process. Every frame that still reads the required value is a no-op, as is
+    every frame on a harness that is not on this routing.
+
+    Fires off the update path, which is synchronous, so the eviction is scheduled
+    rather than awaited; the mark is what the in-flight turn reads immediately.
+    """
+    backend = self._runtime.acp_backend
+    if acp_tool_gate.routing_for(backend) is not acp_tool_gate.Routing.VERIFIED_SEEDED_SETTINGS:
+        return
+    observed = self._runtime._harness.seeded_setting_readback(list(config_options))
+    issue = acp_tool_gate.seeded_setting_issue(backend, _scrub_observed(observed))
+    if not issue:
+        return
+    if self.seeded_setting_lost:
+        return
+    self.seeded_setting_lost = issue
+    logger.error(
+        "%s routing: session reported its permission setting changed mid-session (%s); "
+        "evicting the session before the harness approves on its own [session=%s]",
+        acp_tool_gate.label_for(backend),
+        issue,
+        self._session_id,
+    )
+
+    def _audit() -> None:
+        try:
+            from kiro_crew.sel import sel
+
+            sel().log_tool_invocation(
+                session_key=self._session_key or "",
+                source="acp",
+                tool_name="session/set_config_option",
+                tool_kind="other",
+                outcome="denied",
+                metadata={
+                    "reason": "seeded_setting_tripwire",
+                    "backend": backend,
+                    "observed": _scrub_observed(observed),
+                },
+            )
+        except Exception:  # pragma: no cover - audit is best-effort
+            logger.debug("seeded-setting tripwire: audit failed", exc_info=True)
+
+    audit_task = asyncio.ensure_future(asyncio.to_thread(_audit))
+    self._audit_tasks.add(audit_task)
+    audit_task.add_done_callback(self._audit_tasks.discard)
+    evict = asyncio.ensure_future(self._runtime.terminate_session(self._session_id))
+    self._audit_tasks.add(evict)
+    evict.add_done_callback(self._audit_tasks.discard)
+
+
+def _scrub_observed(value: object) -> object:
+    """Scrub a string read out of the harness's own configuration before it travels.
+
+    A refusal carrying it reaches the dashboard and the chat card, so it goes
+    through the same scrub every other backend-sourced string in this module
+    does. Non-strings pass through unchanged.
+    """
+    if not isinstance(value, str):
+        return value
+    return redact_text(value)
 
 
 def _build_permission_event(self: AcpSessionHandle, msg: JsonRpcMessage) -> AcpEvent | None:

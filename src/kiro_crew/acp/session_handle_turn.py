@@ -45,6 +45,7 @@ from kiro_crew.acp._dispatch import (
 )
 from kiro_crew.acp.client import (
     AcpError,
+    AcpToolGateUnroutable,
     _effective_prompt_timeout_async,
     _loggable_request_id,
     _raise_acp_error,
@@ -307,6 +308,12 @@ async def _run_turn(
     # turn state and losing events. Each caller should use its own handle.
     if not self._turn_done.is_set():
         raise AcpRuntimeError("A turn is already active on this session handle")
+    if self.seeded_setting_lost:
+        # The tripwire marked this handle and scheduled its eviction; a prompt
+        # issued in that window must not run against a harness that reported it
+        # no longer asks. The ACP-layer gate type, so callers see the same
+        # refusal the session-start read-back would have raised.
+        raise AcpToolGateUnroutable(self.seeded_setting_lost)
     # An abandoned answer leaves ``_abandoned_steering`` in its own
     # done-callback, before the cancel it scheduled is written, so a scheduled
     # cancel alone must still hold the prompt back until it has gone out.

@@ -754,15 +754,12 @@ AGENT_AUTH_DECLARATIONS: Tuple[AgentAuthDeclaration, ...] = (
         # token's parent, so the relocated file keeps two segments.
         home_override_env_vars=("XDG_CONFIG_HOME",),
         override_relative_leaves=("muse/auth.json",),
-        # NOTHING excluded from the mask, because no mask is applied: this harness's
-        # routing is ``Routing.UNVERIFIED``, so it is outside
-        # ``tool_gate.ENFORCED_ROUTINGS`` and ``adapter_hidden_credential_dirs`` returns
-        # empty for it. Declaring an ``adapter_own_leaves`` exclusion would assert a
-        # carve-out from a control that never runs -- the exact reason claude's is
-        # empty. When Track A verifies the routing and the harness becomes enforced,
-        # this becomes ``(".config/muse/auth.json",)`` so the adapter's own child can
-        # still read its token through the mask; until then it must be ``()``.
-        adapter_own_leaves=(),
+        # Re-exposed through the mask so the adapter's own ``muse serve`` child can
+        # still read its token: the harness is ENFORCED
+        # (``Routing.VERIFIED_SEEDED_SETTINGS``), so ``adapter_hidden_credential_dirs``
+        # denies the child every credential home on the read-gate floor, and this is
+        # the one leaf the host needs back -- codex's shape, not claude's.
+        adapter_own_leaves=(".config/muse/auth.json",),
         # Action only, no state: a model served locally needs no sign-in, and the
         # adapter reads the file itself, so Crew checks neither. Prose, no backticks,
         # an em dash -- the panel renders it as plain text.
@@ -782,10 +779,14 @@ AGENT_AUTH_DECLARATIONS: Tuple[AgentAuthDeclaration, ...] = (
         # still authenticated.
         host_logout_retires_children=False,
         entitlement_source=ENTITLEMENT_OWN_CREDENTIAL_FILE,
-        # No signed-out signature yet: Muse's own "not signed in" error text on 1.4.11
-        # has not been captured (Track A). A guessed phrase would risk turning a
-        # transient failure terminal, so it is left empty until a live capture lands,
-        # and the shared auth vocabulary reads its signed-out answers meanwhile.
+        # Captured live on Muse 1.4.11 through the adapter with XDG_CONFIG_HOME pointed
+        # at an empty directory: ``initialize`` and ``session/new`` both SUCCEED, and
+        # the first ``session/prompt`` is answered with error -32000 ``Authentication
+        # required: Muse SDK turn failed: not logged in: run /login to add an API key.
+        # ...`` (``data.failure.kind: "authRequired"``, ``retryable: false``). The
+        # phrase below is the host's own wording inside that message, not the
+        # adapter's framing, so it survives an adapter re-wording of the prefix.
+        signed_out_signature="not logged in: run /login",
     ),
 )
 

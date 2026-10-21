@@ -14,32 +14,39 @@ resolver and the install probe each name both, and the adapter is told which ``m
 to run through its own ``MUSE_CODE_EXECUTABLE`` -- which Crew forwards so the operator's
 choice of binary is honoured rather than overridden.
 
-Muse lands DORMANT
-------------------
-This harness is complete enough to spawn, but its ROUTING is
-:data:`~kiro_crew.agent_sdk.backends.Routing.UNVERIFIED` (see
-``agent_sdk/backends_routing.py``). MSP's ``ApprovalMode`` is a closed enum
-(``allowAll | promptUnmatched | onRequest | denyUnmatched``) and the ``Session`` object
-reads the effective mode back (``approvalMode: EffectiveApprovalModeState``), which is
-the shape goose's ``VERIFIED_SEEDED_SETTINGS`` uses -- but whether Crew can seed
-``promptUnmatched`` at ``session/start`` and read it back before the first prompt on
-this host's Muse 1.4.11 is unproven (Track A holds the live captures). So:
+How Muse is made to ask
+-----------------------
+Routing is :data:`~kiro_crew.agent_sdk.backends.Routing.VERIFIED_SEEDED_SETTINGS`
+(see ``agent_sdk/backends_routing.py``), goose's mechanism, on the runtime driver.
+MSP's ``ApprovalMode`` is a closed enum (``allowAll | promptUnmatched | onRequest |
+denyUnmatched``) and the host's own default, ``onRequest``, asks only when the model
+chooses to. So Crew supplies ``promptUnmatched`` as the session is CREATED: the
+adapter takes it in ``session/new``'s ``_meta`` under ``"muse/approval"``
+(:meth:`MuseHarness.session_extras`), after the client opted into the seam on
+``initialize`` (:attr:`MuseHarness.client_capabilities`), and the SAME response
+carries the policy the adapter resolved as the ``nativeApprovalPolicy`` config
+option's ``currentValue`` (:meth:`MuseHarness.seeded_setting_readback`). The
+shared handle reads that back before the first prompt and refuses the session when
+it is anything else; every later ``config_option_update`` is re-read by the same
+seam, and one that no longer carries the value evicts the session.
 
-* ``UNVERIFIED`` resolves INDETERMINATE and refuses, and
-  ``register_selectable_backend`` refuses an ``UNVERIFIED`` id, so Muse is NOT in
-  ``BASELINE_SELECTABLE_BACKENDS`` -- it is named in ``NOT_SHIPPED_SELECTABLE`` with
-  the reason;
-* it is NOT in ``tool_gate.ENFORCED_ROUTINGS``, so no credential mask is applied to its
-  child. :meth:`resolve_spawn` therefore applies NO ``extra_hidden_dirs`` -- the exact
-  opposite of ``CodexHarness.resolve_spawn``, and the correct answer for an unenforced
-  host: a mask is the compensating control for an ENFORCED host's passive reads, and
-  claiming one here would assert a control that does not run.
+Driven live on Muse 1.4.11 through the fork adapter: the seeded session read
+``promptUnmatched`` back on ``session/new``, a shell command drew a real
+``session/request_permission`` (options ``allow_once`` / ``abort``), and the
+client's deny left the command ``failed`` with no completed execute update
+(``test/fixtures/acp_frames/muse/``). Because the harness is enforced,
+:meth:`MuseHarness.resolve_spawn` resolves the same OS credential mask codex does.
 
-Flipping to selectable is one stage: prove the seed + read-back (Track A), change the
-routing row to ``VERIFIED_SEEDED_SETTINGS`` with its ``("approvalMode",
-"promptUnmatched")`` setting, decide the MCP projection, and remove the
-``NOT_SHIPPED_SELECTABLE`` entry. Nothing in THIS file changes except that the enforced
-path would then resolve a mask here the way codex does.
+What the live capture ALSO showed, stated here rather than glossed: under
+``promptUnmatched`` a session-mounted MCP tool call did NOT draw a permission
+request -- Muse's default permission profile (``:auto-review``) lets its built-in
+approval judge clear "prompt-bound" calls, and the MCP call was resolved
+``resolvedBy: llmJudge``. Selecting the ``:ask-me`` profile (reviewer authority
+``human``) on the wire is what routes those to the client; that selection is the
+adapter's ``session/start.permissionProfile`` member, which the fork adapter does
+not expose yet. Until it does and the read-back covers it, this routing establishes
+the gate for the host's own shell tool and NOT for MCP tools, and the harness must
+not be selectable. See ``docs/system-specs/modules/harness-onboarding.md``.
 """
 
 from __future__ import annotations
@@ -49,6 +56,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from kiro_crew import acp_tool_gate
 from kiro_crew.acp.harness._common import MembershipHarness
 from kiro_crew.acp.harness.base import (
     NotificationAliases,
@@ -57,6 +65,7 @@ from kiro_crew.acp.harness.base import (
     SpawnPlan,
     TeardownPolicy,
 )
+from kiro_crew.acp.harness.codex import resolve_spawn_masks
 from kiro_crew.acp.types import (
     ACP_BACKEND_MUSE,
     ACP_CLIENT_CAPABILITIES,
@@ -84,6 +93,32 @@ PROTOCOL_VERSION_MUSE = 1
 #: so the operator's choice of binary is carried rather than overridden.
 _ENV_MUSE_CODE_EXECUTABLE = "MUSE_CODE_EXECUTABLE"
 
+#: The ``_meta`` key the adapter's approval seam lives under, on BOTH sides of the
+#: handshake: the client opts in with ``_meta[KEY] = 1`` on ``initialize`` (the
+#: adapter then advertises ``_meta[KEY].seedAtSessionNew``), and seeds the policy
+#: with ``_meta[KEY] = {"policy": ...}`` on ``session/new``. One constant so the
+#: opt-in and the seed cannot name different keys.
+_APPROVAL_META_KEY = "muse/approval"
+
+#: ``clientCapabilities`` for the handshake: the shared declaration plus the
+#: approval-seam opt-in. A harness constant, like codex's -- Muse is not a
+#: ``client_meta_settings`` host, so the runtime sends this exactly as declared.
+_MUSE_CLIENT_CAPABILITIES: dict = {
+    **ACP_CLIENT_CAPABILITIES,
+    "_meta": {_APPROVAL_META_KEY: 1},
+}
+
+
+def _approval_seed() -> dict[str, Any]:
+    """The ``session/new`` ``_meta`` envelope that seeds the required approval policy.
+
+    The value comes from ``ACP_BACKEND_PERMISSION_SETTING``, the same row the
+    read-back and the refusal read, so what is seeded, what is read back and what a
+    refusal reports cannot drift apart.
+    """
+    _setting_key, value = acp_tool_gate.permission_setting_for(ACP_BACKEND_MUSE)
+    return {_APPROVAL_META_KEY: {"policy": value}}
+
 
 class MuseHarness(MembershipHarness):
     """The muse-code-acp host, codex-shaped and currently dormant."""
@@ -101,13 +136,12 @@ class MuseHarness(MembershipHarness):
         which ``muse`` to run, and the not-found message names whichever half is
         absent.
 
-        NO credential mask is resolved here, and that is deliberate rather than an
-        omission: this harness's routing is ``UNVERIFIED``, so it is outside
-        ``tool_gate.ENFORCED_ROUTINGS`` and its privileged tools are not made to ask
-        -- there is no enforced boundary for a mask to compensate for yet. When the
-        routing is verified and the harness becomes enforced, this method grows the
-        same ``resolve_spawn_masks`` call ``CodexHarness.resolve_spawn`` makes; until
-        then an empty mask is the honest answer, not a simplification.
+        The credential mask is resolved here the way ``CodexHarness.resolve_spawn``
+        resolves it, and for the same reason: this harness is ENFORCED
+        (``Routing.VERIFIED_SEEDED_SETTINGS``), and ACP v1 cannot make a host ask
+        before a passive READ, so the OS-boundary mask is the compensating control --
+        the child is denied every credential home on the read-gate floor except the
+        leaves the auth declaration re-exposes (its own ``auth.json``).
 
         The adapter takes no argv of its own: any invocation enters stdio-server mode
         and blocks on stdin, so there is no ``--agent`` (it reads no Kiro agent file)
@@ -134,7 +168,12 @@ class MuseHarness(MembershipHarness):
             # message names the HOST half, since either component can be absent alone.
             raise AcpRuntimeError(client_mod.muse_host_not_found_message(host_search))
         self._muse_host_bin = host_bin
-        return SpawnPlan(argv=list(adapter_argv))
+        hidden, expose = await resolve_spawn_masks(ctx.sandbox_mode, self.backend)
+        return SpawnPlan(
+            argv=list(adapter_argv),
+            extra_hidden_dirs=hidden,
+            extra_expose_files=expose,
+        )
 
     def apply_spawn_env(
         self,
@@ -173,7 +212,13 @@ class MuseHarness(MembershipHarness):
 
     @property
     def client_capabilities(self) -> dict[str, Any]:
-        return ACP_CLIENT_CAPABILITIES
+        """The shared declaration plus the approval-seam opt-in (``_meta["muse/approval"]``).
+
+        Without the opt-in the adapter does not advertise the seam and ignores the
+        seed, and the read-back then refuses the session -- so sending it here is
+        what makes the seed below meaningful rather than a key the adapter drops.
+        """
+        return _MUSE_CLIENT_CAPABILITIES
 
     # ── Seam 3: session/new and session/load extras ──
 
@@ -187,13 +232,36 @@ class MuseHarness(MembershipHarness):
         crew_panel: bool = False,
         session_key: str = "",
     ) -> SessionExtras:
-        """Empty. Muse has no ``--agent`` channel to register anything on.
+        """The approval seed, and nothing else.
 
-        Like codex, what Muse needs per session is the ``mcpServers`` array -- and
-        while the harness is dormant its MCP projection is ``no-channel``, so even
-        that carries nothing yet. There is no custom-agent definition to hand over.
+        Muse has no ``--agent`` channel and no custom-agent definition to register;
+        its servers travel in the ``mcpServers`` array the mirror projects. What it
+        DOES need at session creation is the permission routing's seed: the adapter
+        takes the required approval policy in ``session/new``'s ``_meta`` and reports
+        the policy it resolved in the same response's ``configOptions``, which
+        :meth:`seeded_setting_readback` then reads. Seeding at creation rather than
+        with a second ``session/set_config_option`` is what makes the first prompt
+        gated rather than the second.
         """
-        return SessionExtras()
+        return SessionExtras(session_meta=_approval_seed())
+
+    def seeded_setting_readback(self, config_options: list[dict[str, Any]]) -> object:
+        """The ``currentValue`` of the approval-policy config option, or ``None``.
+
+        The adapter reports the policy it resolved as the ``nativeApprovalPolicy``
+        select in ``configOptions`` -- on the ``session/new`` and ``session/load``
+        responses and on every ``config_option_update``. The option id is the
+        setting key in ``ACP_BACKEND_PERMISSION_SETTING``, so the row names what is
+        seeded, what is read here and what a refusal reports. An absent option, or
+        one whose value is not a string, answers ``None``, which refuses.
+        """
+        setting_key, _value = acp_tool_gate.permission_setting_for(self.backend)
+        for option in config_options:
+            if not isinstance(option, dict) or option.get("id") != setting_key:
+                continue
+            current = option.get("currentValue")
+            return current if isinstance(current, str) else None
+        return None
 
     def session_mcp_servers(
         self,

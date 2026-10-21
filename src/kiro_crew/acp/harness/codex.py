@@ -183,7 +183,9 @@ def _sandbox_wrapper_generations(sandbox_mode: str) -> int:
         return 0
 
 
-async def resolve_spawn_masks(sandbox_mode: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+async def resolve_spawn_masks(
+    sandbox_mode: str, backend: str = ACP_BACKEND_CODEX
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """``(hidden_dirs, expose_files)`` for the spawn, or a refusal.
 
     Two halves of one decision, resolved together and BEFORE the process exists:
@@ -208,15 +210,16 @@ async def resolve_spawn_masks(sandbox_mode: str) -> tuple[tuple[str, ...], tuple
 
     Keyed on the ROUTING, never on codex's identity: the preflight re-checks
     ``acp_tool_gate.is_enforced`` itself, so this cannot mask a harness this core
-    does not enforce, and a future ``SESSION_CONFIG`` harness gets the same
-    treatment by declaring the same routing.
+    does not enforce, and another enforced adapter-shaped harness gets the same
+    treatment by naming itself as *backend* (muse does). The default keeps codex's
+    own call byte-identical.
     """
     from kiro_crew.acp import client as client_mod
 
     hidden = await client_mod._run_preflight_bounded(
-        client_mod._sandbox_preflight, ACP_BACKEND_CODEX, sandbox_mode
+        client_mod._sandbox_preflight, backend, sandbox_mode
     )
-    expose = acp_tool_gate.adapter_expose_files(ACP_BACKEND_CODEX, hidden)
+    expose = acp_tool_gate.adapter_expose_files(backend, hidden)
     return hidden, expose
 
 

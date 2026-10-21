@@ -198,6 +198,8 @@ class AcpSessionHandle:
     _refuse_unretained_provenance = _sh_permissions._refuse_unretained_provenance
     _audit_handle_reject = _sh_permissions._audit_handle_reject
     apply_session_permission_routing = _sh_permissions.apply_session_permission_routing
+    _verify_seeded_setting_readback = _sh_permissions._verify_seeded_setting_readback
+    _tripwire_seeded_setting = _sh_permissions._tripwire_seeded_setting
     _build_permission_event = _sh_permissions._build_permission_event
     # ``session/update`` frames as ``AcpEvent`` values: ``kiro_crew.acp.session_handle_updates``.
     _report_evicted_attributions = _sh_updates._report_evicted_attributions
@@ -597,6 +599,12 @@ class AcpSessionHandle:
         # member session's loaded-check reads this, never a re-read of the file.
         self.consumed_agent_spec: dict[str, Any] | None = None
         self.mirror_used: bool = False
+        # Set by ``_tripwire_seeded_setting`` when a ``VERIFIED_SEEDED_SETTINGS``
+        # harness reports its permission setting changed mid-session; the issue text.
+        # Empty while the setting read back as required. Read by the turn path so a
+        # prompt issued in the window before the scheduled eviction lands refuses
+        # rather than runs ungated.
+        self.seeded_setting_lost: str = ""
         # A member session's confirmation result, recorded by the runtime from the
         # mirrored arm: the saved template whose consumed projection matched, plus
         # the projection gaps that keep the Capabilities view "unverified". Both

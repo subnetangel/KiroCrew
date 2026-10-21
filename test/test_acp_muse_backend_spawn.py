@@ -17,7 +17,7 @@ what is here is true of Muse and of nothing else.
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -36,12 +36,17 @@ from kiro_crew.acp.types import (
     METHOD_SESSION_UPDATE,
 )
 from kiro_crew.agent_sdk import backend_install
-from kiro_crew.agent_sdk.backends import Routing, routing_for
+from kiro_crew.agent_sdk.backends import Routing, permission_setting_for, routing_for
 from kiro_crew.agent_sdk.host_auth import declaration_for
 
 _ADAPTER_ARGV = ["/opt/bin/node", "/opt/lib/muse-code-acp/index.js"]
 _HOST_BIN = "/opt/bin/muse"
 _SEARCH = "/opt/bin"
+# What the shared mask resolver answers in these tests: the preflight itself probes
+# the sandbox and canonicalizes the home, which codex's own spawn tests stub the
+# same way, so a spawn test asserts the mask is REQUESTED and CARRIED, not resolved.
+_HIDDEN = ("/h/.aws", "/h/.config/muse")
+_EXPOSE = ("/h/.config/muse/auth.json",)
 
 
 def _ctx(**over):
@@ -63,12 +68,19 @@ def adapter() -> MuseHarness:
 
 
 def _patch_both(adapter_result, host_result):
-    """Patch BOTH component resolvers on the client the harness reads at call time."""
+    """Patch BOTH component resolvers on the client the harness reads at call time.
+
+    The shared mask resolver is stubbed alongside, because an enforced harness
+    resolves it on every spawn and the real one probes the host's sandbox.
+    """
     from kiro_crew.acp import client as client_mod
 
     return (
         patch.object(client_mod, "_resolve_muse_code_acp_bin", return_value=adapter_result),
         patch.object(client_mod, "_resolve_muse_host_bin", return_value=host_result),
+        patch.object(
+            harness_mod, "resolve_spawn_masks", new=AsyncMock(return_value=(_HIDDEN, _EXPOSE))
+        ),
     )
 
 
@@ -93,16 +105,16 @@ class TestRegistry:
 class TestTwoComponentSpawn:
     @pytest.mark.asyncio
     async def test_the_adapter_entry_is_the_whole_argv(self, adapter):
-        a, h = _patch_both((_ADAPTER_ARGV, _SEARCH), (_HOST_BIN, _SEARCH))
-        with a, h:
+        a, h, m = _patch_both((_ADAPTER_ARGV, _SEARCH), (_HOST_BIN, _SEARCH))
+        with a, h, m:
             plan = await adapter.resolve_spawn(_ctx())
         assert plan.argv == _ADAPTER_ARGV
 
     @pytest.mark.asyncio
     async def test_no_agent_or_model_flag_is_appended(self, adapter):
         """The adapter takes no argv of its own: any invocation blocks on stdin."""
-        a, h = _patch_both((_ADAPTER_ARGV, _SEARCH), (_HOST_BIN, _SEARCH))
-        with a, h:
+        a, h, m = _patch_both((_ADAPTER_ARGV, _SEARCH), (_HOST_BIN, _SEARCH))
+        with a, h, m:
             plan = await adapter.resolve_spawn(_ctx())
         assert "--agent" not in plan.argv
         assert "--model" not in plan.argv
@@ -111,33 +123,34 @@ class TestTwoComponentSpawn:
     @pytest.mark.asyncio
     async def test_crew_never_owns_this_host_credential(self, adapter):
         """Muse authenticates itself, so a process expecting a Crew callback would wait."""
-        a, h = _patch_both((_ADAPTER_ARGV, _SEARCH), (_HOST_BIN, _SEARCH))
-        with a, h:
+        a, h, m = _patch_both((_ADAPTER_ARGV, _SEARCH), (_HOST_BIN, _SEARCH))
+        with a, h, m:
             plan = await adapter.resolve_spawn(_ctx())
         assert plan.host_auth is False
 
     @pytest.mark.asyncio
-    async def test_no_credential_mask_is_applied_while_unenforced(self, adapter):
-        """The dormant invariant that is a security claim, not a simplification.
+    async def test_the_credential_mask_is_resolved_for_this_backend(self, adapter):
+        """The enforced invariant, codex's shape: the OS mask is the compensating
+        control for the passive reads ACP v1 cannot make the host ask about.
 
-        Muse's routing is ``UNVERIFIED``, so it is outside ``ENFORCED_ROUTINGS`` and
-        its tools are not made to ask -- there is no enforced boundary for a mask to
-        compensate for. An empty mask here is correct; a non-empty one would assert a
-        control that never runs. (Codex, which IS enforced, resolves one here.)
+        Asked through the SHARED resolver and keyed on THIS backend, so the preflight
+        re-checks ``is_enforced`` for muse rather than inheriting codex's answer, and
+        the auth declaration's own carve-out is the one re-exposed.
         """
-        a, h = _patch_both((_ADAPTER_ARGV, _SEARCH), (_HOST_BIN, _SEARCH))
-        with a, h:
-            plan = await adapter.resolve_spawn(_ctx())
-        assert plan.extra_hidden_dirs == ()
-        assert plan.extra_expose_files == ()
+        a, h, m = _patch_both((_ADAPTER_ARGV, _SEARCH), (_HOST_BIN, _SEARCH))
+        with a, h, m as masks:
+            plan = await adapter.resolve_spawn(_ctx(sandbox_mode="standard"))
+        assert plan.extra_hidden_dirs == _HIDDEN
+        assert plan.extra_expose_files == _EXPOSE
+        masks.assert_awaited_once_with("standard", ACP_BACKEND_MUSE)
 
     @pytest.mark.asyncio
     async def test_a_missing_adapter_aborts_with_its_own_searched_path(self, adapter):
         """The adapter half absent: the message names the adapter and the npm command."""
         from kiro_crew.acp.session_handle import AcpRuntimeError
 
-        a, h = _patch_both((None, "/one:/two"), (_HOST_BIN, _SEARCH))
-        with a, h:
+        a, h, m = _patch_both((None, "/one:/two"), (_HOST_BIN, _SEARCH))
+        with a, h, m:
             with pytest.raises(AcpRuntimeError) as exc:
                 await adapter.resolve_spawn(_ctx())
         message = str(exc.value)
@@ -155,8 +168,8 @@ class TestTwoComponentSpawn:
         """
         from kiro_crew.acp.session_handle import AcpRuntimeError
 
-        a, h = _patch_both((_ADAPTER_ARGV, _SEARCH), (None, "/three"))
-        with a, h:
+        a, h, m = _patch_both((_ADAPTER_ARGV, _SEARCH), (None, "/three"))
+        with a, h, m:
             with pytest.raises(AcpRuntimeError) as exc:
                 await adapter.resolve_spawn(_ctx())
         message = str(exc.value)
@@ -168,8 +181,8 @@ class TestTwoComponentSpawn:
 
     @pytest.mark.asyncio
     async def test_both_resolvers_run_once(self, adapter):
-        a, h = _patch_both((_ADAPTER_ARGV, _SEARCH), (_HOST_BIN, _SEARCH))
-        with a as adapter_r, h as host_r:
+        a, h, m = _patch_both((_ADAPTER_ARGV, _SEARCH), (_HOST_BIN, _SEARCH))
+        with a as adapter_r, h as host_r, m:
             await adapter.resolve_spawn(_ctx())
         assert adapter_r.call_count == 1
         assert host_r.call_count == 1
@@ -182,8 +195,8 @@ class TestTwoComponentSpawn:
         path back, so the adapter runs exactly the binary Crew found rather than
         re-searching a PATH that may differ inside the sandbox.
         """
-        a, h = _patch_both((_ADAPTER_ARGV, _SEARCH), (_HOST_BIN, _SEARCH))
-        with a, h:
+        a, h, m = _patch_both((_ADAPTER_ARGV, _SEARCH), (_HOST_BIN, _SEARCH))
+        with a, h, m:
             await adapter.resolve_spawn(_ctx())
         env: dict[str, str] = {"PATH": "/usr/bin"}
         adapter.apply_spawn_env(env)
@@ -216,9 +229,47 @@ class TestHandshakeAndSeams:
             await adapter.answer_request("_kiro/auth/getAccessToken")
 
     @pytest.mark.asyncio
-    async def test_session_extras_carry_no_custom_agents(self, adapter):
+    async def test_session_extras_carry_the_approval_seed_and_no_custom_agents(self, adapter):
+        """The seed travels in session/new's _meta under the adapter's key, and its
+        value is the routing table's row -- one source for seed, read-back and refusal."""
         extras = await adapter.session_extras("kirocrew", work_dir="/w")
         assert extras.custom_agents is None
+        assert extras.session_meta == {"muse/approval": {"policy": "promptUnmatched"}}
+        assert extras.session_meta["muse/approval"]["policy"] == (
+            permission_setting_for(ACP_BACKEND_MUSE)[1]
+        )
+
+    def test_the_handshake_opts_into_the_approval_seam(self, adapter):
+        """Without ``_meta["muse/approval"] = 1`` on initialize the adapter drops the
+        seed silently and the read-back refuses; the opt-in is what makes the seed
+        meaningful. Everything else is the shared declaration."""
+        caps = adapter.client_capabilities
+        assert caps["_meta"] == {"muse/approval": 1}
+        assert caps["fs"] == {"readTextFile": False, "writeTextFile": False}
+        assert caps["terminal"] is False
+
+    def test_the_readback_is_the_policy_options_current_value(self, adapter):
+        option = {
+            "id": "nativeApprovalPolicy",
+            "type": "select",
+            "currentValue": "promptUnmatched",
+            "options": [{"value": "onRequest"}, {"value": "promptUnmatched"}],
+        }
+        assert adapter.seeded_setting_readback([{"id": "model"}, option]) == "promptUnmatched"
+
+    @pytest.mark.parametrize(
+        "options",
+        [
+            [],
+            [{"id": "model", "currentValue": "muse-spark-1.2"}],
+            [{"id": "nativeApprovalPolicy"}],
+            [{"id": "nativeApprovalPolicy", "currentValue": 7}],
+            ["nativeApprovalPolicy"],
+        ],
+    )
+    def test_an_absent_or_malformed_option_reads_back_none(self, adapter, options):
+        """None is the refusing answer: nothing is inferred from a missing read-back."""
+        assert adapter.seeded_setting_readback(options) is None
 
     def test_crew_sandbox_is_the_only_confinement(self, adapter):
         """A Node adapter carries no OS sandbox for Crew's to nest inside or defer to."""
@@ -231,14 +282,19 @@ class TestHandshakeAndSeams:
         assert adapter.verifies_agent_activation is False
 
 
-class TestDormantState:
-    """The invariants that make 'dormant' a named state rather than an incomplete one."""
+class TestRoutingState:
+    """The pins that make the routing a verified claim rather than a declared one."""
 
-    def test_routing_is_unverified(self):
-        """UNVERIFIED resolves INDETERMINATE and refuses, and is what
-        ``register_selectable_backend`` rejects -- the gate that keeps Muse off the
-        switch until Track A proves the approvalMode seed and read-back."""
-        assert routing_for(ACP_BACKEND_MUSE) is Routing.UNVERIFIED
+    def test_routing_is_verified_seeded_settings_with_its_row(self):
+        """goose's mechanism: the policy is supplied at session creation and read back
+        out of the harness's own configOptions on the same response. The row names
+        the config option id the adapter reports it under and the one value of the
+        closed enum under which an unmatched tool call PROMPTS."""
+        assert routing_for(ACP_BACKEND_MUSE) is Routing.VERIFIED_SEEDED_SETTINGS
+        assert permission_setting_for(ACP_BACKEND_MUSE) == (
+            "nativeApprovalPolicy",
+            "promptUnmatched",
+        )
 
     def test_it_is_in_the_transport_and_owned_sessions_sets(self):
         """What dormancy does NOT withhold: Muse is codex-shaped (AcpRuntime) and owns
@@ -256,23 +312,29 @@ class TestDormantState:
         assert ACP_BACKEND_MUSE not in ACP_BACKENDS_SESSION_EVICTION
         assert ACP_BACKEND_MUSE in ACP_BACKENDS_SESSION_MCP_ARRAY
 
-    def test_the_auth_declaration_fences_its_leaf_but_carves_nothing(self):
+    def test_the_auth_declaration_fences_its_leaf_and_carves_it_back_for_the_host(self):
         """own_credential_file, the leaf relocated under XDG_CONFIG_HOME, and -- because
-        it is unenforced -- adapter_own_leaves empty, exactly like claude."""
+        the harness is enforced and masked -- the same leaf re-exposed through the mask
+        so ``muse serve`` can read its own token, codex's shape."""
         d = declaration_for(ACP_BACKEND_MUSE)
         assert d.credential_leaves == (".config/muse/auth.json",)
         assert d.home_override_env_vars == ("XDG_CONFIG_HOME",)
         assert d.override_relative_leaves == ("muse/auth.json",)
-        assert d.adapter_own_leaves == ()
+        assert d.adapter_own_leaves == (".config/muse/auth.json",)
         assert d.host_logout_retires_children is False
+
+    def test_the_signed_out_signature_is_the_hosts_own_wording(self):
+        """Captured live on 1.4.11 off the first session/prompt's -32000 error."""
+        d = declaration_for(ACP_BACKEND_MUSE)
+        assert d.signed_out_signature == "not logged in: run /login"
 
     def test_the_install_probe_names_the_adapter_and_the_command(self):
         """On a host without the adapter the probe names it and the npm command; the
         host half's remedy is the Stage 5 auth declaration, not an npm line."""
         from kiro_crew.acp import client as client_mod
 
-        a, h = _patch_both((None, _SEARCH), (None, _SEARCH))
-        with a, h:
+        a, h, m = _patch_both((None, _SEARCH), (None, _SEARCH))
+        with a, h, m:
             state = backend_install._probe_muse()
         assert state.installed == backend_install.MISSING
         assert backend_install.COMPONENT_MUSE_ACP_ADAPTER in state.missing_components
@@ -281,15 +343,15 @@ class TestDormantState:
 
     def test_the_probe_omits_the_npm_command_when_only_the_host_is_missing(self):
         """The npm install does not install the host, so it is not suggested for it."""
-        a, h = _patch_both((_ADAPTER_ARGV, _SEARCH), (None, _SEARCH))
-        with a, h:
+        a, h, m = _patch_both((_ADAPTER_ARGV, _SEARCH), (None, _SEARCH))
+        with a, h, m:
             state = backend_install._probe_muse()
         assert state.missing_components == (backend_install.COMPONENT_MUSE_HOST,)
         assert state.install_command == ""
 
     def test_the_probe_reports_installed_when_both_resolve(self):
-        a, h = _patch_both((_ADAPTER_ARGV, _SEARCH), (_HOST_BIN, _SEARCH))
-        with a, h:
+        a, h, m = _patch_both((_ADAPTER_ARGV, _SEARCH), (_HOST_BIN, _SEARCH))
+        with a, h, m:
             state = backend_install._probe_muse()
         assert state.installed == backend_install.INSTALLED
         assert state.missing_components == ()

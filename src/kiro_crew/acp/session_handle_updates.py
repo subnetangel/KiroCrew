@@ -357,11 +357,15 @@ def _handle_update(self: AcpSessionHandle, msg: JsonRpcMessage) -> list[AcpEvent
 
     # config_option_update: ACP pushes updated configOptions (e.g. after
     # model switch rebuilds effort options). State update, no event emitted.
+    # A harness routed through a seeded setting is re-read here too: a frame
+    # that no longer carries the required value is the last one before the
+    # harness stops asking (the tripwire is routing-gated, a no-op elsewhere).
     if session_update == "config_option_update":
         config_options = update.get("configOptions")
         if isinstance(config_options, list):
             self._config_options = config_options
             self._sync_effort_levels()
+            self._tripwire_seeded_setting(config_options)
         return []
 
     # KAS folds signals that kiro-cli sends as separate top-level

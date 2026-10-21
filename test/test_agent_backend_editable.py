@@ -44,17 +44,22 @@ FIELD = "agent.acp_backend"
 #: back before the first prompt (``Routing.VERIFIED_GATE_EXTENSION``), which is the
 #: routing half met the way the exclusion said it had to be.
 #:
-#: ``muse`` (Muse Code) is the member today, and it fails the SAME half for the
-#: opposite reason: not that its routing cannot gate, but that its gate is not yet
-#: PROVEN. MSP's ``ApprovalMode`` is a closed enum and the ``Session`` reads the
-#: effective mode back, so the ``VERIFIED_SEEDED_SETTINGS`` seam EXISTS -- but whether
-#: Crew can seed ``promptUnmatched`` at ``session/start`` and read it back before the
-#: first prompt on this host's Muse 1.4.11 has not been driven (Track A holds the live
-#: captures). Its routing is therefore ``Routing.UNVERIFIED``, which
-#: ``register_selectable_backend`` refuses, so it is dormant: KNOWN, fully carded,
-#: with auth and an install probe, but not selectable. It leaves this set the moment
-#: Track A proves the seed/read-back and its routing becomes
-#: ``VERIFIED_SEEDED_SETTINGS`` -- a one-line flip, the same shape goose already uses.
+#: ``muse`` (Muse Code) is the member today, and it fails the SAME half for a third
+#: reason: its gate is proven for the host's OWN shell tool and not for MCP tools.
+#: Its routing is ``Routing.VERIFIED_SEEDED_SETTINGS`` and that half is real -- Crew
+#: seeds ``nativeApprovalPolicy=promptUnmatched`` in ``session/new``'s ``_meta``, the
+#: adapter reads it back in the same response, a shell command drew a live
+#: ``session/request_permission`` and the deny stopped it
+#: (``test/fixtures/acp_frames/muse/``). But the same live run showed a session-mounted
+#: MCP tool call resolved ``resolvedBy: llmJudge`` with NO permission request: Muse's
+#: default permission profile (``:auto-review``) lets its built-in approval judge clear
+#: "prompt-bound" calls, and MCP calls are that class. Crew's own tools would run under
+#: Muse's judge rather than Crew's gate, hooks and audit -- the exact exposure this bar
+#: guards. The fix is on the wire: select the ``:ask-me`` profile (reviewer authority
+#: ``human``) through MSP's ``session/start.permissionProfile`` and read the profile
+#: back; the fork adapter exposes neither yet. Muse leaves this set when that seam
+#: lands, Crew seeds and reads it back beside the policy, and a re-captured
+#: ``mcp-stdio-mount-live.jsonl`` shows the MCP call drawing the permission request.
 NOT_SHIPPED_SELECTABLE: frozenset = frozenset({ACP_BACKEND_MUSE})
 
 

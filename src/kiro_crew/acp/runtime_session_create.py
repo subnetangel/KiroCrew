@@ -339,6 +339,11 @@ async def create_session(
         session_work_dir,
         mcp_servers=wire_servers,
         kas_custom_agents=kas_agents,
+        # The harness's own ``_meta`` keys. None on the kiro path (and on every
+        # host that needs nothing at creation), so the request is byte-identical
+        # there; a host whose permission gate is seeded at session creation
+        # names the seed here and reads it back off ``resp`` below.
+        session_meta=kas_extras.session_meta,
     )
 
     projected_sources: dict[str, str] = {}
