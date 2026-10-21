@@ -944,3 +944,30 @@ The lesson this run carries: dormant is a NAMED stage, not an incomplete one. Ev
 gap above has an address — a set, a routing row, a projection kind, a declaration
 field — so the day Track A lands its captures, flipping Muse to selectable is a
 bounded edit at each of those addresses rather than a re-litigation of the design.
+
+**Update — the permission seam is now TWO settings, and the MCP gate is why.** The
+approval POLICY (`nativeApprovalPolicy = promptUnmatched`) makes the host's own shell
+tool prompt, and the live corpus proves it does. It does NOT make a session-mounted
+MCP tool call prompt: under Muse's default permission profile (Auto-review) the
+built-in reviewer clears the MCP call (`resolvedBy: llmJudge`) with no
+`session/request_permission` reaching the client (`reports/corpus-REPORT.md`).
+Selecting the **Ask me** profile (reviewer authority `human`) is what routes MCP
+calls to the client too. So Crew now seeds BOTH settings and requires BOTH read back:
+
+- `ACP_BACKEND_PERMISSION_SETTING[muse]` keeps its primary pair
+  `("nativeApprovalPolicy", "promptUnmatched")` (single-key callers read it unchanged),
+  and `ACP_BACKEND_PERMISSION_SETTING_EXTRA[muse]` adds
+  `(("nativePermissionProfile", ":ask-me"),)`. `permission_settings_for(muse)` returns
+  both, policy first. The Ask-me id is one named constant `MUSE_ASK_ME_PROFILE_ID`
+  (`:ask-me`), a one-line change once Track A confirms it live.
+- `_approval_seed()` sends `_meta["muse/approval"] = {"policy": ..., "profile": ...}`;
+  `seeded_setting_readback` returns `{setting_key: value|None}`; `seeded_setting_issue`
+  refuses if EITHER key is absent or wrong; the tripwire fires on EITHER changing.
+
+What is STILL required to flip `NOT_SHIPPED_SELECTABLE` (the parent's integration
+step, not this seam's): the fork adapter must implement the profile half of the wire
+contract (`session/start.permissionProfile` + `requirePermissionProfile`, and report
+`nativePermissionProfile` back in `configOptions`), AND the integration corpus under
+`test/fixtures/acp_frames/muse/` must capture an MCP tool call drawing a real
+`session/request_permission` under Ask-me with a denial that fails the call. Until
+both exist, Muse stays dormant.

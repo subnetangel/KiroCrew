@@ -865,6 +865,7 @@ from kiro_crew.agent_sdk.backends_routing import (  # noqa: E402,F401 - re-expor
     ACP_BACKEND_GATE_READBACK,
     ACP_BACKEND_PERMISSION_CONFIG,
     ACP_BACKEND_PERMISSION_SETTING,
+    ACP_BACKEND_PERMISSION_SETTING_EXTRA,
     ACP_BACKEND_ROUTING,
     ACP_BACKENDS_CREW_FIRES_SPEC_HOOKS,
     ACP_BACKENDS_HOOKS_LIST,
@@ -873,12 +874,15 @@ from kiro_crew.agent_sdk.backends_routing import (  # noqa: E402,F401 - re-expor
     ACP_BACKENDS_OPEN_EXTERNAL_URL,
     ACP_BACKENDS_PERMISSION_KIND_FROM_TOOL_CALL,
     ACP_BACKENDS_SIDE_READONLY,
+    MUSE_ASK_ME_PROFILE_ID,
+    MUSE_PERMISSION_PROFILE_OPTION,
     Readback,
     Routing,
     gate_probe_command_for,
     gate_readback_for,
     permission_config_for,
     permission_setting_for,
+    permission_settings_for,
     routing_for,
 )
 from kiro_crew.agent_sdk.backends_sessions import (  # noqa: E402,F401 - re-exported vocabulary

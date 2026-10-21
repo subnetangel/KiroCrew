@@ -694,15 +694,20 @@ def _tripwire_seeded_setting(self: AcpSessionHandle, config_options: list) -> No
 
 
 def _scrub_observed(value: object) -> object:
-    """Scrub a string read out of the harness's own configuration before it travels.
+    """Scrub a value read out of the harness's own configuration before it travels.
 
     A refusal carrying it reaches the dashboard and the chat card, so it goes
     through the same scrub every other backend-sourced string in this module
-    does. Non-strings pass through unchanged.
+    does. A scalar string is scrubbed directly; a mapping (a multi-setting
+    read-back, ``{setting_key: value}``) has each of its string values scrubbed so
+    a per-key refusal cannot leak an unscrubbed value. Anything else passes through
+    unchanged.
     """
-    if not isinstance(value, str):
-        return value
-    return redact_text(value)
+    if isinstance(value, str):
+        return redact_text(value)
+    if isinstance(value, dict):
+        return {k: (redact_text(v) if isinstance(v, str) else v) for k, v in value.items()}
+    return value
 
 
 def _build_permission_event(self: AcpSessionHandle, msg: JsonRpcMessage) -> AcpEvent | None:

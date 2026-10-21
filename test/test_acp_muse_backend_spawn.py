@@ -36,7 +36,12 @@ from kiro_crew.acp.types import (
     METHOD_SESSION_UPDATE,
 )
 from kiro_crew.agent_sdk import backend_install
-from kiro_crew.agent_sdk.backends import Routing, permission_setting_for, routing_for
+from kiro_crew.agent_sdk.backends import (
+    Routing,
+    permission_setting_for,
+    permission_settings_for,
+    routing_for,
+)
 from kiro_crew.agent_sdk.host_auth import declaration_for
 
 _ADAPTER_ARGV = ["/opt/bin/node", "/opt/lib/muse-code-acp/index.js"]
@@ -231,13 +236,21 @@ class TestHandshakeAndSeams:
     @pytest.mark.asyncio
     async def test_session_extras_carry_the_approval_seed_and_no_custom_agents(self, adapter):
         """The seed travels in session/new's _meta under the adapter's key, and its
-        value is the routing table's row -- one source for seed, read-back and refusal."""
+        values are the routing table's rows -- one source for seed, read-back and
+        refusal. Both the approval policy AND the permission profile go out: the
+        policy makes the host's shell tool prompt, the profile routes MCP tool calls
+        to the client instead of the built-in llmJudge."""
         extras = await adapter.session_extras("kirocrew", work_dir="/w")
         assert extras.custom_agents is None
-        assert extras.session_meta == {"muse/approval": {"policy": "promptUnmatched"}}
+        assert extras.session_meta == {
+            "muse/approval": {"policy": "promptUnmatched", "profile": ":ask-me"}
+        }
         assert extras.session_meta["muse/approval"]["policy"] == (
             permission_setting_for(ACP_BACKEND_MUSE)[1]
         )
+        # The profile pair is the SECOND seeded setting, carried under ``profile``.
+        pairs = dict(permission_settings_for(ACP_BACKEND_MUSE))
+        assert extras.session_meta["muse/approval"]["profile"] == pairs["nativePermissionProfile"]
 
     def test_the_handshake_opts_into_the_approval_seam(self, adapter):
         """Without ``_meta["muse/approval"] = 1`` on initialize the adapter drops the
@@ -248,28 +261,65 @@ class TestHandshakeAndSeams:
         assert caps["fs"] == {"readTextFile": False, "writeTextFile": False}
         assert caps["terminal"] is False
 
-    def test_the_readback_is_the_policy_options_current_value(self, adapter):
-        option = {
+    def test_the_readback_is_the_options_current_values_keyed_by_id(self, adapter):
+        """Both seeded options are read back into a mapping keyed by setting id, so
+        the gate can judge each key: the approval policy and the permission profile."""
+        policy = {
             "id": "nativeApprovalPolicy",
             "type": "select",
             "currentValue": "promptUnmatched",
             "options": [{"value": "onRequest"}, {"value": "promptUnmatched"}],
         }
-        assert adapter.seeded_setting_readback([{"id": "model"}, option]) == "promptUnmatched"
+        profile = {
+            "id": "nativePermissionProfile",
+            "type": "select",
+            "currentValue": ":ask-me",
+            "options": [{"value": ":auto-review"}, {"value": ":ask-me"}],
+        }
+        assert adapter.seeded_setting_readback([{"id": "model"}, policy, profile]) == {
+            "nativeApprovalPolicy": "promptUnmatched",
+            "nativePermissionProfile": ":ask-me",
+        }
 
     @pytest.mark.parametrize(
-        "options",
+        "options, expected",
         [
-            [],
-            [{"id": "model", "currentValue": "muse-spark-1.2"}],
-            [{"id": "nativeApprovalPolicy"}],
-            [{"id": "nativeApprovalPolicy", "currentValue": 7}],
-            ["nativeApprovalPolicy"],
+            # Nothing advertised: BOTH keys read None (both refuse).
+            ([], {"nativeApprovalPolicy": None, "nativePermissionProfile": None}),
+            (
+                [{"id": "model", "currentValue": "muse-spark-1.2"}],
+                {"nativeApprovalPolicy": None, "nativePermissionProfile": None},
+            ),
+            # Option present but no currentValue, or a non-string one -> None for it.
+            (
+                [{"id": "nativeApprovalPolicy"}, {"id": "nativePermissionProfile"}],
+                {"nativeApprovalPolicy": None, "nativePermissionProfile": None},
+            ),
+            (
+                [
+                    {"id": "nativeApprovalPolicy", "currentValue": 7},
+                    {"id": "nativePermissionProfile", "currentValue": ":ask-me"},
+                ],
+                {"nativeApprovalPolicy": None, "nativePermissionProfile": ":ask-me"},
+            ),
+            # A non-dict entry is skipped; its key stays None.
+            (
+                ["nativeApprovalPolicy"],
+                {"nativeApprovalPolicy": None, "nativePermissionProfile": None},
+            ),
+            # Only the policy advertised: the profile key still reads None and refuses.
+            (
+                [{"id": "nativeApprovalPolicy", "currentValue": "promptUnmatched"}],
+                {"nativeApprovalPolicy": "promptUnmatched", "nativePermissionProfile": None},
+            ),
         ],
     )
-    def test_an_absent_or_malformed_option_reads_back_none(self, adapter, options):
-        """None is the refusing answer: nothing is inferred from a missing read-back."""
-        assert adapter.seeded_setting_readback(options) is None
+    def test_an_absent_or_malformed_option_reads_back_none_for_that_key(
+        self, adapter, options, expected
+    ):
+        """None is the refusing answer per key: nothing is inferred from a missing
+        read-back, and a key the response does not carry stays None."""
+        assert adapter.seeded_setting_readback(options) == expected
 
     def test_crew_sandbox_is_the_only_confinement(self, adapter):
         """A Node adapter carries no OS sandbox for Crew's to nest inside or defer to."""
@@ -286,14 +336,22 @@ class TestRoutingState:
     """The pins that make the routing a verified claim rather than a declared one."""
 
     def test_routing_is_verified_seeded_settings_with_its_row(self):
-        """goose's mechanism: the policy is supplied at session creation and read back
-        out of the harness's own configOptions on the same response. The row names
-        the config option id the adapter reports it under and the one value of the
-        closed enum under which an unmatched tool call PROMPTS."""
+        """goose's mechanism: the settings are supplied at session creation and read
+        back out of the harness's own configOptions on the same response. The primary
+        row names the approval-policy option id and the one value of the closed enum
+        under which an unmatched tool call PROMPTS; the full set adds the permission
+        profile, without which the built-in reviewer clears MCP tool calls."""
         assert routing_for(ACP_BACKEND_MUSE) is Routing.VERIFIED_SEEDED_SETTINGS
+        # The PRIMARY pair is unchanged -- goose/opencode and every single-key caller
+        # (seed/describe/remediation) read exactly what they always did.
         assert permission_setting_for(ACP_BACKEND_MUSE) == (
             "nativeApprovalPolicy",
             "promptUnmatched",
+        )
+        # The full set is BOTH pairs, policy first, profile second.
+        assert permission_settings_for(ACP_BACKEND_MUSE) == (
+            ("nativeApprovalPolicy", "promptUnmatched"),
+            ("nativePermissionProfile", ":ask-me"),
         )
 
     def test_it_is_in_the_transport_and_owned_sessions_sets(self):

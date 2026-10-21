@@ -73,6 +73,7 @@ from kiro_crew.agent_sdk.backends import (
     gate_readback_for,
     permission_config_for,
     permission_setting_for,
+    permission_settings_for,
     routing_for,
 )
 
@@ -752,17 +753,45 @@ def seeded_setting_issue(backend: str, observed: object) -> str:
     """
     if routing_for(backend) is not Routing.VERIFIED_SEEDED_SETTINGS:
         return ""
-    setting_key, required = permission_setting_for(backend)
-    if not setting_key or not required:
+    pairs = permission_settings_for(backend)
+    if not pairs or not all(key and required for key, required in pairs):
         return "the harness declares verified seeded-settings routing but names no setting"
-    if observed is None:
+    if len(pairs) == 1:
+        # One setting (goose, opencode, claude): *observed* is the scalar value the
+        # harness read back, or ``None``. The messages are byte-identical to the
+        # single-key seam these harnesses have always been judged by.
+        setting_key, required = pairs[0]
+        return _seeded_pair_issue(setting_key, required, observed)
+    # More than one setting (Muse: approval policy AND permission profile). The
+    # harness reads them ALL back, keyed by setting id, so *observed* is a mapping
+    # ``{setting_key: value|None}``. Judge each pair with the SAME vocabulary as the
+    # single-key branch and return the FIRST that fails, so the refusal names one
+    # concrete missing/wrong key the operator can act on. A non-mapping observation
+    # (a harness that answered the old scalar shape) cannot carry both keys, so every
+    # pair reads absent -- which is the fail-closed direction.
+    readback = observed if isinstance(observed, dict) else {}
+    for setting_key, required in pairs:
+        issue = _seeded_pair_issue(setting_key, required, readback.get(setting_key))
+        if issue:
+            return issue
+    return ""
+
+
+def _seeded_pair_issue(setting_key: str, required: str, value: object) -> str:
+    """Judge ONE seeded ``(setting_key, required)`` pair against the value read back.
+
+    ``""`` when *value* is the required one. The wording is the single-key seam's
+    own, so a harness that seeds one setting and one that seeds several refuse in the
+    same words -- a per-key refusal for Muse reads exactly like opencode's.
+    """
+    if value is None:
         return (
             f"the harness's own resolved configuration does not carry {setting_key!r} "
             "after the seed"
         )
-    if observed != required:
+    if value != required:
         return (
-            f"{setting_key!r} reads {observed!r} rather than the required {required!r}, "
+            f"{setting_key!r} reads {value!r} rather than the required {required!r}, "
             "so privileged tools would not ask"
         )
     return ""

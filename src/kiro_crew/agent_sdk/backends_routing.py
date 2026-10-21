@@ -467,6 +467,48 @@ ACP_BACKEND_PERMISSION_SETTING: dict = {
 }
 
 
+#: Muse's **Ask me** permission-profile id, the one named constant the brief calls
+#: for so the id is a one-line change once Track A confirms it live. The approval
+#: POLICY (``promptUnmatched``, above) is necessary but not sufficient: under Muse's
+#: default permission profile (Auto-review) the built-in reviewer clears
+#: "eligible approval requests" -- a live capture showed a session-mounted MCP tool
+#: call resolved ``resolvedBy: llmJudge`` with NO ``session/request_permission``
+#: reaching the client, while shell commands DID prompt (``reports/corpus-REPORT.md``).
+#: Selecting the Ask-me profile (reviewer authority ``human``) is what routes the
+#: MCP calls to the client too. The docs spell the default as
+#: ``permissions.default_profile: ":auto-review"``, so the Ask-me id is PROBABLY
+#: ``":ask-me"``; Track A confirms the exact id and ``reviewerAuthority: "human"``
+#: from ``permissionProfile/list`` on the live host before this is relied on.
+MUSE_ASK_ME_PROFILE_ID = ":ask-me"
+
+
+#: The ACP config option id the adapter reports the committed permission profile back
+#: through (``configOptions[].id == "nativePermissionProfile"``), the second half of
+#: Muse's two-part seed. One name shared by the seed envelope, the read-back and the
+#: refusal, for the same reason ``nativeApprovalPolicy`` is a shared id.
+MUSE_PERMISSION_PROFILE_OPTION = "nativePermissionProfile"
+
+
+#: Harness id -> the SECOND (and later) ``(setting_key, required_value)`` pairs a
+#: harness seeds, BESIDE its primary pair in ``ACP_BACKEND_PERMISSION_SETTING``.
+#:
+#: A second table rather than widening the primary one keeps
+#: :func:`permission_setting_for` returning a true ``(key, value)`` for every
+#: backend -- goose and opencode unpack it, and so do the single-key describe/
+#: remediation/seed sites for Muse's policy pair -- so nothing that reads the primary
+#: pair has to learn a new shape. A harness that seeds exactly one setting has no row
+#: here, and :func:`permission_settings_for` then yields just its primary pair, which
+#: is why goose and opencode stay byte-identical.
+#:
+#: Muse seeds a SECOND pair: the ``Ask me`` permission PROFILE, without which its
+#: built-in reviewer clears MCP tool calls before any ``session/request_permission``
+#: reaches the client (see :data:`MUSE_ASK_ME_PROFILE_ID`). Both pairs are required
+#: read back and either changing trips the tripwire.
+ACP_BACKEND_PERMISSION_SETTING_EXTRA: dict = {
+    ACP_BACKEND_MUSE: ((MUSE_PERMISSION_PROFILE_OPTION, MUSE_ASK_ME_PROFILE_ID),),
+}
+
+
 #: Harness id -> the probe command its ``VERIFIED_GATE_EXTENSION`` routing reads
 #: back out of the harness's command registry before the first prompt.
 #:
@@ -539,8 +581,31 @@ def permission_config_for(backend: str) -> tuple:
 
 
 def permission_setting_for(backend: str) -> tuple:
-    """The ``(setting_key, value)`` *backend* seeds, or ``("", "")`` when it seeds none."""
+    """The PRIMARY ``(setting_key, value)`` *backend* seeds, or ``("", "")`` when none.
+
+    A harness that seeds more than one setting carries the rest in
+    ``ACP_BACKEND_PERMISSION_SETTING_EXTRA``; this returns only the first pair, so the
+    single-key callers (goose's env seed, opencode's config seed, Muse's policy seed
+    and the describe/remediation text) read exactly what they always did.
+    :func:`permission_settings_for` is the one that returns every pair.
+    """
     return ACP_BACKEND_PERMISSION_SETTING.get(backend, ("", ""))
+
+
+def permission_settings_for(backend: str) -> tuple:
+    """Every ``(setting_key, value)`` pair *backend* seeds, primary first, or ``()``.
+
+    The primary pair from ``ACP_BACKEND_PERMISSION_SETTING`` followed by any extra
+    pairs from ``ACP_BACKEND_PERMISSION_SETTING_EXTRA``. A harness with one setting
+    yields a one-element tuple (goose, opencode), so a caller that iterates this
+    treats the one-pair and many-pair harnesses the same way. A harness that seeds
+    none yields ``()``.
+    """
+    primary = ACP_BACKEND_PERMISSION_SETTING.get(backend)
+    if primary is None:
+        return ()
+    extra = ACP_BACKEND_PERMISSION_SETTING_EXTRA.get(backend, ())
+    return (primary, *extra)
 
 
 def gate_probe_command_for(backend: str) -> str:

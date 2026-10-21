@@ -40,7 +40,7 @@ from kiro_crew.acp.types import (
     JsonRpcMessage,
 )
 
-_SEED = {"muse/approval": {"policy": "promptUnmatched"}}
+_SEED = {"muse/approval": {"policy": "promptUnmatched", "profile": ":ask-me"}}
 
 
 def _policy_option(current: str | None) -> dict[str, Any]:
@@ -60,14 +60,44 @@ def _policy_option(current: str | None) -> dict[str, Any]:
     return option
 
 
-def _session_new_response(policy: str | None, *, with_option: bool = True) -> dict[str, Any]:
-    """What the fork adapter answers ``session/new`` with on 1.4.11 (shape per the corpus)."""
+def _profile_option(current: str | None) -> dict[str, Any]:
+    option: dict[str, Any] = {
+        "id": "nativePermissionProfile",
+        "name": "Native permission profile",
+        "type": "select",
+        "options": [
+            {"value": ":auto-review", "name": "Auto-review"},
+            {"value": ":ask-me", "name": "Ask me"},
+            {"value": ":unrestricted", "name": "Unrestricted"},
+            {"value": ":read-only", "name": "Read-only"},
+        ],
+    }
+    if current is not None:
+        option["currentValue"] = current
+    return option
+
+
+def _session_new_response(
+    policy: str | None,
+    *,
+    with_option: bool = True,
+    profile: str | None = ":ask-me",
+    with_profile: bool = True,
+) -> dict[str, Any]:
+    """What the fork adapter answers ``session/new`` with on 1.4.11 (shape per the corpus).
+
+    Both seeded options are reported: the approval policy and the permission profile.
+    ``profile`` defaults to the required ``:ask-me`` so a test that only varies the
+    policy keeps the profile valid; ``with_profile=False`` drops the profile option
+    entirely (an adapter that does not implement the second half of the seam)."""
     options: list[dict[str, Any]] = [
         {"id": "mode", "type": "select", "currentValue": "default", "options": []},
         {"id": "model", "type": "select", "currentValue": "muse-spark-1.2", "options": []},
     ]
     if with_option:
         options.append(_policy_option(policy))
+    if with_profile:
+        options.append(_profile_option(profile))
     return {
         "sessionId": "muse-session-1",
         "modes": {
@@ -212,15 +242,65 @@ class TestTheReadBackDecides:
                 await rt.create_session(cwd="/w", agent="kirocrew")
         assert plane.methods[-1] == METHOD_SESSION_CLOSE
 
+    @pytest.mark.asyncio
+    async def test_policy_right_but_profile_missing_refuses(self):
+        """Contract item 5: BOTH settings are required read back. The policy prompts
+        the shell tool, but without the Ask-me profile the built-in reviewer clears
+        MCP tool calls -- so an adapter that reports the policy and NOT the profile is
+        refused, naming the missing profile option."""
+        rt = _runtime_for(ACP_BACKEND_MUSE)
+        plane = _ControlPlane(_session_new_response("promptUnmatched", with_profile=False))
+        with ExitStack() as stack:
+            plane.install(rt, stack)
+            with pytest.raises(AcpToolGateUnroutable) as excinfo:
+                await rt.create_session(cwd="/w", agent="kirocrew")
+        assert "does not carry 'nativePermissionProfile'" in str(excinfo.value)
+        assert plane.methods[-1] == METHOD_SESSION_CLOSE
+        assert "muse-session-1" not in rt._session_queues
 
-def _config_update(policy: str) -> JsonRpcMessage:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("read_back", [":auto-review", ":unrestricted", ":read-only"])
+    async def test_policy_right_but_profile_wrong_refuses(self, read_back):
+        """The profile resolved to something other than Ask-me -- the default
+        Auto-review, or any non-human-reviewer profile. Observed, not corrected:
+        refuse and evict, naming the profile option and the value seen."""
+        rt = _runtime_for(ACP_BACKEND_MUSE)
+        plane = _ControlPlane(_session_new_response("promptUnmatched", profile=read_back))
+        with ExitStack() as stack:
+            plane.install(rt, stack)
+            with pytest.raises(AcpToolGateUnroutable) as excinfo:
+                await rt.create_session(cwd="/w", agent="kirocrew")
+        assert "nativePermissionProfile" in str(excinfo.value)
+        assert read_back in str(excinfo.value)
+        assert METHOD_SET_CONFIG_OPTION not in plane.methods
+        assert plane.methods[-1] == METHOD_SESSION_CLOSE
+        assert "muse-session-1" not in rt._session_queues
+
+    @pytest.mark.asyncio
+    async def test_both_right_opens_the_session_with_no_extra_write(self):
+        """policy right + profile right -> accept, exactly as the single-key seam did
+        with the policy alone. Nothing is written; the response carried both values."""
+        rt = _runtime_for(ACP_BACKEND_MUSE)
+        plane = _ControlPlane(_session_new_response("promptUnmatched", profile=":ask-me"))
+        with ExitStack() as stack:
+            plane.install(rt, stack)
+            handle = await rt.create_session(cwd="/w", agent="kirocrew")
+        assert handle.session_id == "muse-session-1"
+        assert METHOD_SET_CONFIG_OPTION not in plane.methods
+        assert METHOD_SESSION_CLOSE not in plane.methods
+        assert handle.seeded_setting_lost == ""
+
+
+def _config_update(policy: str = "promptUnmatched", profile: str = ":ask-me") -> JsonRpcMessage:
+    """A ``config_option_update`` carrying BOTH seeded options. Vary either to drive
+    a tripwire on that key; the other stays at its required value by default."""
     return JsonRpcMessage(
         method="session/update",
         params={
             "sessionId": "muse-session-1",
             "update": {
                 "sessionUpdate": "config_option_update",
-                "configOptions": [_policy_option(policy)],
+                "configOptions": [_policy_option(policy), _profile_option(profile)],
             },
         },
     )
@@ -243,6 +323,31 @@ class TestTheTripwireHoldsTheSessionThere:
             await asyncio.gather(*list(handle._audit_tasks), return_exceptions=True)
         assert events == []
         assert "allowAll" in handle.seeded_setting_lost
+        evict.assert_awaited_once_with("muse-session-1")
+        with pytest.raises(AcpToolGateUnroutable):
+            async for _ in handle.prompt("hello"):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_a_mid_session_profile_change_also_trips_the_wire(self):
+        """The tripwire fires on EITHER seeded setting changing. Here the POLICY stays
+        promptUnmatched but the PROFILE is flipped off Ask-me -- the built-in reviewer
+        would start clearing MCP tool calls again -- so the session is marked, evicted
+        and the next prompt refuses, naming the profile value seen."""
+        rt = _runtime_for(ACP_BACKEND_MUSE)
+        plane = _ControlPlane(_session_new_response("promptUnmatched"))
+        with ExitStack() as stack:
+            plane.install(rt, stack)
+            handle = await rt.create_session(cwd="/w", agent="kirocrew")
+            evict = AsyncMock()
+            stack.enter_context(patch.object(rt, "terminate_session", evict))
+            stack.enter_context(patch("kiro_crew.sel.sel", return_value=MagicMock()))
+            events = handle._handle_update(_config_update(profile=":auto-review"))
+            await asyncio.sleep(0)
+            await asyncio.gather(*list(handle._audit_tasks), return_exceptions=True)
+        assert events == []
+        assert ":auto-review" in handle.seeded_setting_lost
+        assert "nativePermissionProfile" in handle.seeded_setting_lost
         evict.assert_awaited_once_with("muse-session-1")
         with pytest.raises(AcpToolGateUnroutable):
             async for _ in handle.prompt("hello"):

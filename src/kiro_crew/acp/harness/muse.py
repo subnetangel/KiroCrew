@@ -42,11 +42,17 @@ What the live capture ALSO showed, stated here rather than glossed: under
 request -- Muse's default permission profile (``:auto-review``) lets its built-in
 approval judge clear "prompt-bound" calls, and the MCP call was resolved
 ``resolvedBy: llmJudge``. Selecting the ``:ask-me`` profile (reviewer authority
-``human``) on the wire is what routes those to the client; that selection is the
-adapter's ``session/start.permissionProfile`` member, which the fork adapter does
-not expose yet. Until it does and the read-back covers it, this routing establishes
-the gate for the host's own shell tool and NOT for MCP tools, and the harness must
-not be selectable. See ``docs/system-specs/modules/harness-onboarding.md``.
+``human``) on the wire is what routes those to the client. Crew now seeds that
+profile too: the seam carries TWO settings -- the approval policy
+(``nativeApprovalPolicy = promptUnmatched``) AND the permission profile
+(``nativePermissionProfile = :ask-me``, one named constant
+:data:`~kiro_crew.agent_sdk.backends.MUSE_ASK_ME_PROFILE_ID`) -- and BOTH are read
+back and either changing trips the tripwire. The fork adapter's
+``session/start.permissionProfile`` member is what consumes the profile seed; until
+that adapter ships it AND the integration corpus proves an MCP tool call drawing a
+``session/request_permission`` under Ask-me, the harness must not be selectable.
+Flipping selectability is the parent's integration step, not this seam's. See
+``docs/system-specs/modules/harness-onboarding.md``.
 """
 
 from __future__ import annotations
@@ -95,9 +101,11 @@ _ENV_MUSE_CODE_EXECUTABLE = "MUSE_CODE_EXECUTABLE"
 
 #: The ``_meta`` key the adapter's approval seam lives under, on BOTH sides of the
 #: handshake: the client opts in with ``_meta[KEY] = 1`` on ``initialize`` (the
-#: adapter then advertises ``_meta[KEY].seedAtSessionNew``), and seeds the policy
-#: with ``_meta[KEY] = {"policy": ...}`` on ``session/new``. One constant so the
-#: opt-in and the seed cannot name different keys.
+#: adapter then advertises ``_meta[KEY].seedAtSessionNew`` and
+#: ``.seedProfileAtSessionNew``), and seeds BOTH the approval policy and the
+#: permission profile with ``_meta[KEY] = {"policy": ..., "profile": ...}`` on
+#: ``session/new``. One constant so the opt-in and the seed cannot name different
+#: keys.
 _APPROVAL_META_KEY = "muse/approval"
 
 #: ``clientCapabilities`` for the handshake: the shared declaration plus the
@@ -110,14 +118,23 @@ _MUSE_CLIENT_CAPABILITIES: dict = {
 
 
 def _approval_seed() -> dict[str, Any]:
-    """The ``session/new`` ``_meta`` envelope that seeds the required approval policy.
+    """The ``session/new`` ``_meta`` envelope that seeds BOTH required settings.
 
-    The value comes from ``ACP_BACKEND_PERMISSION_SETTING``, the same row the
-    read-back and the refusal read, so what is seeded, what is read back and what a
-    refusal reports cannot drift apart.
+    The values come from ``permission_settings_for(MUSE)`` -- the same pairs the
+    read-back and the refusal read -- so what is seeded, what is read back and what a
+    refusal reports cannot drift apart. The policy (``nativeApprovalPolicy``) is the
+    primary pair; the permission profile (``nativePermissionProfile``) is the second,
+    carried under ``profile`` beside it. ``profile`` is additive: an adapter that
+    predates it ignores the key and the read-back then refuses on the missing option,
+    which is the fail-closed direction.
     """
-    _setting_key, value = acp_tool_gate.permission_setting_for(ACP_BACKEND_MUSE)
-    return {_APPROVAL_META_KEY: {"policy": value}}
+    seed: dict[str, Any] = {}
+    for setting_key, value in acp_tool_gate.permission_settings_for(ACP_BACKEND_MUSE):
+        if setting_key == acp_tool_gate.MUSE_PERMISSION_PROFILE_OPTION:
+            seed["profile"] = value
+        else:
+            seed["policy"] = value
+    return {_APPROVAL_META_KEY: seed}
 
 
 class MuseHarness(MembershipHarness):
@@ -237,8 +254,9 @@ class MuseHarness(MembershipHarness):
         Muse has no ``--agent`` channel and no custom-agent definition to register;
         its servers travel in the ``mcpServers`` array the mirror projects. What it
         DOES need at session creation is the permission routing's seed: the adapter
-        takes the required approval policy in ``session/new``'s ``_meta`` and reports
-        the policy it resolved in the same response's ``configOptions``, which
+        takes the required approval policy AND permission profile in
+        ``session/new``'s ``_meta`` (``{"policy": ..., "profile": ...}``) and reports
+        each in the same response's ``configOptions``, which
         :meth:`seeded_setting_readback` then reads. Seeding at creation rather than
         with a second ``session/set_config_option`` is what makes the first prompt
         gated rather than the second.
@@ -246,22 +264,30 @@ class MuseHarness(MembershipHarness):
         return SessionExtras(session_meta=_approval_seed())
 
     def seeded_setting_readback(self, config_options: list[dict[str, Any]]) -> object:
-        """The ``currentValue`` of the approval-policy config option, or ``None``.
+        """The committed ``currentValue`` of EACH seeded option, keyed by its id.
 
-        The adapter reports the policy it resolved as the ``nativeApprovalPolicy``
-        select in ``configOptions`` -- on the ``session/new`` and ``session/load``
-        responses and on every ``config_option_update``. The option id is the
-        setting key in ``ACP_BACKEND_PERMISSION_SETTING``, so the row names what is
-        seeded, what is read here and what a refusal reports. An absent option, or
-        one whose value is not a string, answers ``None``, which refuses.
+        Muse seeds two settings -- the approval policy (``nativeApprovalPolicy``) and
+        the permission profile (``nativePermissionProfile``) -- and the adapter
+        reports each as a select in ``configOptions`` on the ``session/new`` and
+        ``session/load`` responses and on every ``config_option_update``. This reads
+        the committed ``currentValue`` of every seeded option into a mapping
+        ``{setting_key: value|None}``, which ``acp_tool_gate.seeded_setting_issue``
+        judges per key: a key whose option is absent, or whose ``currentValue`` is
+        not a string, answers ``None`` for that key, which refuses. The option ids
+        come from ``permission_settings_for``, so the table names what is seeded,
+        what is read here and what a refusal reports.
         """
-        setting_key, _value = acp_tool_gate.permission_setting_for(self.backend)
+        wanted = {key for key, _ in acp_tool_gate.permission_settings_for(self.backend)}
+        readback: dict[str, object] = {key: None for key in wanted}
         for option in config_options:
-            if not isinstance(option, dict) or option.get("id") != setting_key:
+            if not isinstance(option, dict):
+                continue
+            option_id = option.get("id")
+            if not isinstance(option_id, str) or option_id not in wanted:
                 continue
             current = option.get("currentValue")
-            return current if isinstance(current, str) else None
-        return None
+            readback[option_id] = current if isinstance(current, str) else None
+        return readback
 
     def session_mcp_servers(
         self,
